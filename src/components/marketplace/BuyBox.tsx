@@ -1,0 +1,139 @@
+"use client";
+
+import * as React from "react";
+import { Heart, MessageCircle, Flag, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Alert } from "@/components/ui/Alert";
+import { formatPKR } from "@/lib/utils";
+import type { Phone } from "@/data/phones";
+
+export function BuyBox({ phone }: { phone: Phone }) {
+  const [saved, setSaved] = React.useState(phone.saved);
+  const [buyOpen, setBuyOpen] = React.useState(false);
+  const [messageOpen, setMessageOpen] = React.useState(false);
+  const [reportOpen, setReportOpen] = React.useState(false);
+  const [orderPlaced, setOrderPlaced] = React.useState(false);
+  const [messageSent, setMessageSent] = React.useState(false);
+
+  return (
+    <div className="sticky top-24 bg-surface border border-border rounded-[var(--pb-radius-lg)] p-6">
+      <p className="font-data text-3xl font-semibold text-ink">{formatPKR(phone.price)}</p>
+      {phone.negotiable && <p className="text-sm text-ink-faint mt-1">Negotiable</p>}
+
+      <div className="flex flex-col gap-2.5 mt-6">
+        <Button fullWidth size="lg" onClick={() => setBuyOpen(true)}>
+          Buy Now
+        </Button>
+        <Button fullWidth variant="outline" onClick={() => setMessageOpen(true)}>
+          <MessageCircle className="h-4 w-4" />
+          Message Seller
+        </Button>
+        <div className="flex gap-2.5">
+          <Button
+            variant="ghost"
+            className="flex-1"
+            onClick={() => setSaved((s) => !s)}
+            aria-pressed={saved}
+          >
+            <Heart className={saved ? "h-4 w-4 fill-danger text-danger" : "h-4 w-4"} />
+            {saved ? "Saved" : "Save"}
+          </Button>
+          <Button variant="ghost" className="flex-1" onClick={() => setReportOpen(true)}>
+            <Flag className="h-4 w-4" />
+            Report
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-6 pt-5 border-t border-border flex items-start gap-2.5 text-xs text-ink-faint">
+        <ShieldCheck className="h-4 w-4 text-verify shrink-0 mt-0.5" />
+        Payments are protected — funds are held until you confirm the device on delivery.
+      </div>
+
+      <Modal open={buyOpen} onClose={() => { setBuyOpen(false); setOrderPlaced(false); }} title={orderPlaced ? undefined : "Confirm your order"}>
+        {orderPlaced ? (
+          <div className="text-center py-2">
+            <div className="h-14 w-14 rounded-full bg-verify-tint text-verify flex items-center justify-center mx-auto mb-4">
+              <ShieldCheck className="h-7 w-7" />
+            </div>
+            <h3 className="font-semibold text-lg">Order placed</h3>
+            <p className="text-sm text-ink-soft mt-1.5">
+              Your payment is held securely until you confirm the {phone.model} on delivery.
+            </p>
+            <Button fullWidth className="mt-6" onClick={() => setBuyOpen(false)}>
+              Done
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-ink-soft">{phone.model} · {phone.storage}</span>
+              <span className="font-data font-medium">{formatPKR(phone.price)}</span>
+            </div>
+            <Alert tone="info">
+              This is a frontend demo — no real payment will be processed.
+            </Alert>
+            <Button fullWidth onClick={() => setOrderPlaced(true)}>
+              Confirm and pay
+            </Button>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={messageOpen} onClose={() => { setMessageOpen(false); setMessageSent(false); }} title={messageSent ? undefined : "Message the seller"}>
+        {messageSent ? (
+          <div className="text-center py-2">
+            <div className="h-14 w-14 rounded-full bg-brand-tint text-brand flex items-center justify-center mx-auto mb-4">
+              <MessageCircle className="h-7 w-7" />
+            </div>
+            <h3 className="font-semibold text-lg">Message sent</h3>
+            <p className="text-sm text-ink-soft mt-1.5">The seller usually replies within an hour.</p>
+            <Button fullWidth className="mt-6" onClick={() => setMessageOpen(false)}>
+              Done
+            </Button>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setMessageSent(true);
+            }}
+          >
+            <textarea
+              required
+              placeholder={`Hi, is the ${phone.model} still available?`}
+              className="w-full min-h-28 rounded-[var(--pb-radius-sm)] border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand"
+            />
+            <Button type="submit" fullWidth>
+              Send message
+            </Button>
+          </form>
+        )}
+      </Modal>
+
+      <Modal open={reportOpen} onClose={() => setReportOpen(false)} title="Report this listing">
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setReportOpen(false);
+          }}
+        >
+          <p className="text-sm text-ink-soft">
+            Let us know what's wrong with this listing and our team will review it.
+          </p>
+          <textarea
+            required
+            placeholder="Describe the issue"
+            className="w-full min-h-24 rounded-[var(--pb-radius-sm)] border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand"
+          />
+          <Button type="submit" variant="danger" fullWidth>
+            Submit report
+          </Button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
