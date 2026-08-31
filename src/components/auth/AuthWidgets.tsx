@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/Button";
 
 export function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
   return (
-    <Button variant="outline" fullWidth type="button">
+    <Button variant="outline" fullWidth type="button" onClick={() => { window.location.href = "/api/auth/google"; }}>
       <svg className="h-4.5 w-4.5" viewBox="0 0 24 24">
         <path
           fill="#4285F4"

@@ -14,7 +14,7 @@ export function SignUpForm() {
   const [loading, setLoading] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const fullName = String(data.get("fullName") || "");
@@ -34,10 +34,22 @@ export function SignUpForm() {
     if (Object.keys(next).length > 0) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      router.push("/auth/verify-email");
-    }, 900);
+    const response = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fullName, email, phone: String(data.get("phone") || "") || null, password }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setLoading(false);
+    if (!response.ok) {
+      setErrors({ form: result.error ?? "Unable to create your account. Please try again." });
+      return;
+    }
+    if (result.requiresEmailVerification) {
+      router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+    } else {
+      router.push("/dashboard");
+    }
   };
 
   return (
@@ -46,6 +58,7 @@ export function SignUpForm() {
       <p className="text-sm text-ink-soft mt-1.5">Buy, sell, and verify with confidence.</p>
 
       <form onSubmit={handleSubmit} noValidate className="mt-7 flex flex-col gap-4">
+        {errors.form && <p className="text-sm text-danger bg-danger-tint rounded-(--pb-radius-sm) px-3.5 py-2.5">{errors.form}</p>}
         <div>
           <Label htmlFor="fullName" required>
             Full Name

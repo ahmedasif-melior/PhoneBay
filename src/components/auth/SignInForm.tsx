@@ -14,7 +14,7 @@ export function SignInForm() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const email = String(data.get("email") || "");
@@ -25,10 +25,18 @@ export function SignInForm() {
     }
     setError("");
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      router.push("/dashboard");
-    }, 900);
+    const response = await fetch("/api/auth/signin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setLoading(false);
+    if (!response.ok) {
+      setError(result.error ?? "Unable to sign in. Please try again.");
+      return;
+    }
+    router.push("/dashboard");
   };
 
   return (
@@ -37,7 +45,7 @@ export function SignInForm() {
       <p className="text-sm text-ink-soft mt-1.5">Sign in to your PhoneBay account.</p>
 
       <form onSubmit={handleSubmit} noValidate className="mt-7 flex flex-col gap-4">
-        {error && <p className="text-sm text-danger bg-danger-tint rounded-[var(--pb-radius-sm)] px-3.5 py-2.5">{error}</p>}
+        {error && <p className="text-sm text-danger bg-danger-tint rounded-(--pb-radius-sm) px-3.5 py-2.5">{error}</p>}
         <div>
           <Label htmlFor="email">Email</Label>
           <Input id="email" name="email" type="email" leadingIcon={<Mail className="h-4 w-4" />} autoComplete="email" />
