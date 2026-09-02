@@ -70,7 +70,7 @@ export default function HowItWorksPage() {
         <h2 className="text-3xl font-semibold text-ink">Ready to get started?</h2>
         <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
           <Button href="/marketplace" size="lg">Explore Phones</Button>
-          <Button href="/dashboard/listings/create" size="lg" variant="outline">Sell Your Phone</Button>
+          <Button href="/dashboard/listings/new" size="lg" variant="outline">Sell Your Phone</Button>
         </div>
       </Section>
     </>

@@ -18,6 +18,7 @@ interface ListingRow {
   battery_health: number | null;
   repair_history: string | null;
   photo_count: number;
+  image_urls: string;
   verified: number;
   score: number | null;
   views: number;
@@ -43,6 +44,7 @@ function mapRow(row: ListingRow): ListingRecord {
     batteryHealth: row.battery_health,
     repairHistory: row.repair_history,
     photoCount: row.photo_count,
+    imageUrls: JSON.parse(row.image_urls || "[]"),
     verified: !!row.verified,
     score: row.score,
     views: row.views,
@@ -57,6 +59,7 @@ export interface ListingFilters {
   conditions?: string[];
   cities?: string[];
   verifiedOnly?: boolean;
+  minPrice?: number;
   maxPrice?: number;
   sellerId?: string;
   status?: ListingStatus | ListingStatus[];
@@ -108,6 +111,11 @@ export const listingsRepo = {
       clauses.push("verified = 1");
     }
 
+    if (typeof filters.minPrice === "number") {
+      clauses.push("price >= ?");
+      params.push(filters.minPrice);
+    }
+
     if (typeof filters.maxPrice === "number") {
       clauses.push("price <= ?");
       params.push(filters.maxPrice);
@@ -141,14 +149,15 @@ export const listingsRepo = {
     batteryHealth?: number | null;
     repairHistory?: string | null;
     photoCount?: number;
+    imageUrls?: string[];
     status?: ListingStatus;
   }): ListingRecord {
     const id = generateId("lst_");
     db.prepare(
       `INSERT INTO listings
         (id, seller_id, brand, model, storage, color, condition, price, negotiable, city, area,
-         description, battery_health, repair_history, photo_count, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        description, battery_health, repair_history, photo_count, image_urls, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.sellerId,
@@ -165,6 +174,7 @@ export const listingsRepo = {
       input.batteryHealth ?? null,
       input.repairHistory ?? null,
       input.photoCount ?? 0,
+      JSON.stringify(input.imageUrls ?? []),
       input.status ?? "active"
     );
     return this.findById(id)!;
@@ -182,6 +192,11 @@ export const listingsRepo = {
       score: number;
     }>
   ): ListingRecord | null {
+    const current = this.findById(id);
+    if (current?.status === "sold" && typeof fields.status === "string" && fields.status !== "sold") {
+      return current;
+    }
+
     const columnMap: Record<string, string> = {
       price: "price",
       negotiable: "negotiable",
@@ -196,6 +211,7 @@ export const listingsRepo = {
     for (const [key, value] of Object.entries(fields)) {
       const column = columnMap[key];
       if (!column) continue;
+      if (current?.status === "sold" && key === "status") continue;
       sets.push(`${column} = ?`);
       values.push(typeof value === "boolean" ? (value ? 1 : 0) : value);
     }

@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     return jsonError("Invalid sign up details.", 422, parsed.error.flatten());
   }
 
-  const { fullName, email, phone, password } = parsed.data;
+  const { fullName, email, phone, password, accountPurpose } = parsed.data;
 
   if (usersRepo.findByEmail(email)) {
     return jsonError("An account with this email already exists.", 409);
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       passwordHash: await hashPassword(`supabase:${crypto.randomUUID()}`),
       fullName,
       phone,
+      accountPurpose,
     });
     if (!data.session) return jsonOk({ user: toPublicUser(user), requiresEmailVerification: true }, 201);
     const token = await createSessionToken({ sub: user.id, role: user.role, email: user.email });
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = await hashPassword(password);
-  const user = usersRepo.create({ email, passwordHash, fullName, phone });
+  const user = usersRepo.create({ email, passwordHash, fullName, phone, accountPurpose });
 
   const token = await createSessionToken({ sub: user.id, role: user.role, email: user.email });
   await setSessionCookie(token);

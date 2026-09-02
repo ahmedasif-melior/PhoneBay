@@ -79,9 +79,12 @@ export function SellerBadge({
 }
 
 type ListingStatus = "active" | "pending" | "sold" | "draft" | "paused";
+type VerificationBadgeStatus = "pending" | "in_progress" | "completed";
+
+type SharedStatus = ListingStatus | VerificationBadgeStatus;
 
 const statusConfig: Record<
-  ListingStatus,
+  SharedStatus,
   { label: string; tone: BadgeTone; icon: React.ReactNode }
 > = {
   active: { label: "Active", tone: "verify", icon: <span className="h-1.5 w-1.5 rounded-full bg-verify" /> },
@@ -89,9 +92,11 @@ const statusConfig: Record<
   sold: { label: "Sold", tone: "brand", icon: <BadgeCheck className="h-3 w-3" /> },
   draft: { label: "Draft", tone: "neutral", icon: <span className="h-1.5 w-1.5 rounded-full bg-ink-faint" /> },
   paused: { label: "Paused", tone: "neutral", icon: <span className="h-1.5 w-1.5 rounded-full bg-ink-faint" /> },
+  in_progress: { label: "In Progress", tone: "brand", icon: <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" /> },
+  completed: { label: "Completed", tone: "verify", icon: <BadgeCheck className="h-3 w-3" /> },
 };
 
-export function StatusBadge({ status }: { status: ListingStatus }) {
+export function StatusBadge({ status }: { status: SharedStatus }) {
   const cfg = statusConfig[status];
   return (
     <Badge tone={cfg.tone} icon={cfg.icon}>

@@ -16,6 +16,10 @@ export function jsonOk<T>(data: T, status = 200) {
  * unauthenticated. Use in route handlers that allow both guest and signed-in
  * behaviour.
  */
+export function isAdminRole(role?: string | null): boolean {
+  return role === "ADMIN";
+}
+
 export async function getCurrentUser(): Promise<UserRecord | null> {
   const session = await getSessionFromCookies();
   if (!session) return null;

@@ -1,11 +1,11 @@
-import { jsonError, jsonOk, requireUser, isAuthError } from "@/server/http";
+import { jsonError, jsonOk, requireUser, isAuthError, isAdminRole } from "@/server/http";
 import { verificationRepo } from "@/server/repositories/verification";
 import { listingsRepo } from "@/server/repositories/listings";
 
 export async function GET() {
   try {
     const { user } = await requireUser();
-    if (user.role !== "SHOP" && user.role !== "ADMIN") {
+    if (user.role !== "SHOP" && !isAdminRole(user.role)) {
       return jsonError("Only shop accounts can view the verification queue.", 403);
     }
 

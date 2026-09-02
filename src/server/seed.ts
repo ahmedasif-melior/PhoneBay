@@ -12,7 +12,9 @@ export function seedIfEmpty() {
   const { count } = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   if (count > 0) return;
 
-  const passwordHash = bcrypt.hashSync("password123", 10);
+  const adminEmail = process.env.ADMIN_EMAIL ?? "ahmed.asif@devsatmelior.com";
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "PhoneBayAdmin!2026";
+  const passwordHash = bcrypt.hashSync(adminPassword, 10);
 
   const sellers = [
     { id: generateId("usr_"), email: "ahmed@ahmedmobile.pk", fullName: "Ahmed Mobile Store", city: "Islamabad", role: "SHOP" as const, shopName: "Ahmed Mobile Store" },
@@ -36,6 +38,9 @@ export function seedIfEmpty() {
       insertShop.run(generateId("shp_"), seller.id, seller.shopName, "Device Testing,Certification,Repairs,Trade-In");
     }
   }
+
+  const adminId = generateId("usr_");
+  insertUser.run(adminId, adminEmail, passwordHash, "PhoneBay Admin", "Islamabad", "ADMIN", 9.8);
 
   // A demo buyer account the person can sign in with directly.
   const demoBuyerId = generateId("usr_");

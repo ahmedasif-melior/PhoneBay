@@ -7,19 +7,35 @@ import { Card } from "@/components/ui/Card";
 import { Input, Textarea, Select, Label, Checkbox } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { conditions, type Phone } from "@/data/phones";
+import { conditions } from "@/data/phones";
+import type { ListingRecord } from "@/server/types";
 
-export function EditListingForm({ phone }: { phone: Phone }) {
+export function EditListingForm({ listing }: { listing: ListingRecord }) {
   const router = useRouter();
-  const [price, setPrice] = React.useState(String(phone.price));
-  const [condition, setCondition] = React.useState(phone.condition);
-  const [description, setDescription] = React.useState(phone.description);
-  const [negotiable, setNegotiable] = React.useState(phone.negotiable);
+  const [price, setPrice] = React.useState(String(listing.price));
+  const [condition, setCondition] = React.useState(listing.condition);
+  const [description, setDescription] = React.useState(listing.description ?? "");
+  const [negotiable, setNegotiable] = React.useState(listing.negotiable);
   const [saved, setSaved] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
+    setError("");
+    const response = await fetch(`/api/listings/${listing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ price: Number(price), condition, description, negotiable }),
+    });
+    setSaving(false);
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      setError(result.error ?? "Unable to save changes.");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -28,6 +44,7 @@ export function EditListingForm({ phone }: { phone: Phone }) {
     <>
       <Card className="p-6 sm:p-8">
         <form onSubmit={handleSave} className="flex flex-col gap-5">
+          {error && <p className="text-sm text-danger bg-danger-tint px-3.5 py-2.5">{error}</p>}
           {saved && (
             <p className="flex items-center gap-2 text-sm text-verify-dark bg-verify-tint rounded-[var(--pb-radius-sm)] px-3.5 py-2.5">
               <CheckCircle2 className="h-4 w-4" /> Changes saved.
@@ -43,7 +60,7 @@ export function EditListingForm({ phone }: { phone: Phone }) {
           </label>
           <div>
             <Label>Condition</Label>
-            <Select value={condition} onChange={(e) => setCondition(e.target.value as Phone["condition"])}>
+            <Select value={condition} onChange={(e) => setCondition(e.target.value)}>
               {conditions.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -59,20 +76,20 @@ export function EditListingForm({ phone }: { phone: Phone }) {
             <Button type="button" variant="ghost" className="text-danger" onClick={() => setDeleteOpen(true)}>
               <Trash2 className="h-4 w-4" /> Delete listing
             </Button>
-            <Button type="submit">Save Changes</Button>
+            <Button type="submit" loading={saving}>Save Changes</Button>
           </div>
         </form>
       </Card>
 
       <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete this listing?">
         <p className="text-sm text-ink-soft">
-          This will permanently remove {phone.model} from the marketplace. This action can't be undone.
+          This will permanently remove {listing.model} from the marketplace. This action can't be undone.
         </p>
         <div className="flex gap-3 justify-end mt-6">
           <Button variant="outline" onClick={() => setDeleteOpen(false)}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={() => router.push("/dashboard/listings")}>
+          <Button variant="danger" onClick={async () => { await fetch(`/api/listings/${listing.id}`, { method: "DELETE" }); router.push("/dashboard/listings"); }}>
             Delete Listing
           </Button>
         </div>

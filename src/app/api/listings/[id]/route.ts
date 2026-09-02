@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { jsonError, jsonOk, requireUser, isAuthError } from "@/server/http";
+import { jsonError, jsonOk, requireUser, isAuthError, isAdminRole } from "@/server/http";
 import { updateListingSchema } from "@/server/validation";
 import { listingsRepo } from "@/server/repositories/listings";
 import { certificateRepo } from "@/server/repositories/verification";
@@ -28,7 +28,7 @@ export async function PATCH(
 
     const listing = listingsRepo.findById(id);
     if (!listing) return jsonError("Listing not found.", 404);
-    if (listing.sellerId !== user.id && user.role !== "ADMIN") {
+    if (listing.sellerId !== user.id && !isAdminRole(user.role)) {
       return jsonError("You don't have permission to edit this listing.", 403);
     }
 
@@ -36,6 +36,10 @@ export async function PATCH(
     const parsed = updateListingSchema.safeParse(body);
     if (!parsed.success) {
       return jsonError("Invalid update.", 422, parsed.error.flatten());
+    }
+
+    if (listing.status === "sold" && parsed.data.status && parsed.data.status !== "sold") {
+      return jsonError("This item is sold and its status is locked.", 409);
     }
 
     const updated = listingsRepo.update(id, parsed.data);
@@ -56,7 +60,7 @@ export async function DELETE(
 
     const listing = listingsRepo.findById(id);
     if (!listing) return jsonError("Listing not found.", 404);
-    if (listing.sellerId !== user.id && user.role !== "ADMIN") {
+    if (listing.sellerId !== user.id && !isAdminRole(user.role)) {
       return jsonError("You don't have permission to delete this listing.", 403);
     }
 

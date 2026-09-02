@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     conditions: params.get("conditions")?.split(",").filter(Boolean),
     cities: params.get("cities")?.split(",").filter(Boolean),
     verifiedOnly: params.get("verifiedOnly") === "true",
+    minPrice: params.get("minPrice") ? Number(params.get("minPrice")) : undefined,
     maxPrice: params.get("maxPrice") ? Number(params.get("maxPrice")) : undefined,
     sellerId: params.get("sellerId") ?? undefined,
     sort: (params.get("sort") as ListingFilters["sort"]) ?? "recommended",

@@ -9,7 +9,7 @@ const columns = [
     title: "Marketplace",
     links: [
       { href: "/marketplace", label: "Browse Phones" },
-      { href: "/dashboard/listings/create", label: "Sell Your Phone" },
+      { href: "/dashboard/listings/new", label: "Sell Your Phone" },
       { href: "/for-shops", label: "For Shops" },
       { href: "/verification", label: "Verification" },
     ],

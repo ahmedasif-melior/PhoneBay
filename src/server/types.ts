@@ -1,4 +1,5 @@
 export type Role = "USER" | "SHOP" | "ADMIN";
+export type AccountPurpose = "buyer" | "seller" | "both" | "shop" | null;
 export type ListingStatus = "active" | "pending" | "sold" | "draft" | "paused";
 export type VerificationStatus = "pending" | "in_progress" | "completed";
 export type OrderStatus = "processing" | "shipped" | "delivered" | "cancelled";
@@ -13,6 +14,7 @@ export interface UserRecord {
   bio: string | null;
   city: string | null;
   role: Role;
+  accountPurpose: AccountPurpose;
   emailVerified: boolean;
   phoneVerified: boolean;
   trustScore: number;
@@ -39,6 +41,7 @@ export interface ListingRecord {
   batteryHealth: number | null;
   repairHistory: string | null;
   photoCount: number;
+  imageUrls: string[];
   verified: boolean;
   score: number | null;
   views: number;

@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Input, Label, Checkbox } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import type { UserRecord } from "@/server/types";
 
 const tabs = [
   { id: "account", label: "Account" },
@@ -14,7 +15,7 @@ const tabs = [
   { id: "danger", label: "Danger Zone" },
 ];
 
-export function SettingsTabs() {
+export function SettingsTabs({ user }: { user?: Partial<UserRecord> | null }) {
   const [active, setActive] = React.useState("account");
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [notif, setNotif] = React.useState({
@@ -34,11 +35,11 @@ export function SettingsTabs() {
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <Label>Email</Label>
-                <Input defaultValue="ahmed.asif@example.com" type="email" />
+                <Input defaultValue={user?.email ?? ""} type="email" readOnly />
               </div>
               <div>
                 <Label>Phone Number</Label>
-                <Input defaultValue="+92 300 1234567" type="tel" />
+                <Input defaultValue={user?.phone ?? ""} type="tel" placeholder="Add your phone number" />
               </div>
             </div>
             <Button className="self-start">Save Changes</Button>
@@ -68,11 +69,11 @@ export function SettingsTabs() {
           <Card className="flex flex-col gap-4">
             <div>
               <Label>Current Password</Label>
-              <Input type="password" />
+              <Input type="password" placeholder="Enter your current password" />
             </div>
             <div>
               <Label>New Password</Label>
-              <Input type="password" />
+              <Input type="password" placeholder="Choose a new password" />
             </div>
             <Button className="self-start">Update Password</Button>
           </Card>

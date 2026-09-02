@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { jsonError, jsonOk, requireUser, isAuthError } from "@/server/http";
+import { jsonError, jsonOk, requireUser, isAuthError, isAdminRole } from "@/server/http";
 import { completeVerificationSchema } from "@/server/validation";
 import { verificationRepo } from "@/server/repositories/verification";
 
@@ -10,7 +10,7 @@ export async function POST(
   try {
     const { id } = await params;
     const { user } = await requireUser();
-    if (user.role !== "SHOP" && user.role !== "ADMIN") {
+    if (user.role !== "SHOP" && !isAdminRole(user.role)) {
       return jsonError("Only shop accounts can complete verification jobs.", 403);
     }
 

@@ -29,6 +29,17 @@ function createConnection(): DatabaseSync {
 
   const schema = fs.readFileSync(SCHEMA_PATH, "utf-8");
   database.exec(schema);
+  try {
+    database.exec("ALTER TABLE listings ADD COLUMN image_urls TEXT NOT NULL DEFAULT '[]';");
+  } catch {
+    // The column already exists in databases created after this migration.
+  }
+
+  try {
+    database.exec("ALTER TABLE users ADD COLUMN account_purpose TEXT;");
+  } catch {
+    // The column already exists in databases created after this migration.
+  }
 
   return database;
 }

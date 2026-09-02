@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS listings (
   battery_health INTEGER,
   repair_history TEXT,
   photo_count    INTEGER NOT NULL DEFAULT 0,
+  image_urls     TEXT NOT NULL DEFAULT '[]',
   verified       INTEGER NOT NULL DEFAULT 0,
   score          REAL,
   views          INTEGER NOT NULL DEFAULT 0,

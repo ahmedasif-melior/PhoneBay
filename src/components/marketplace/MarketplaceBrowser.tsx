@@ -8,31 +8,31 @@ import { Button } from "@/components/ui/Button";
 import { PhoneCard } from "@/components/marketplace/PhoneCard";
 import { FilterPanel, defaultFilters, type Filters } from "@/components/marketplace/FilterPanel";
 import { MobileFilterDrawer } from "@/components/marketplace/MobileFilterDrawer";
-import { phones } from "@/data/phones";
+import type { ListingRecord } from "@/server/types";
 
 type SortKey = "recommended" | "newest" | "price-asc" | "price-desc";
 
-export function MarketplaceBrowser() {
+export function MarketplaceBrowser({ initialListings }: { initialListings: ListingRecord[] }) {
   const [query, setQuery] = React.useState("");
   const [filters, setFilters] = React.useState<Filters>(defaultFilters);
   const [sort, setSort] = React.useState<SortKey>("recommended");
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   const results = React.useMemo(() => {
-    let list = phones.filter((p) => {
+    let list = initialListings.filter((p) => {
       if (query && !`${p.brand} ${p.model}`.toLowerCase().includes(query.toLowerCase())) return false;
       if (filters.brands.length && !filters.brands.includes(p.brand)) return false;
       if (filters.conditions.length && !filters.conditions.includes(p.condition)) return false;
-      if (filters.locations.length && !filters.locations.includes(p.location)) return false;
+      if (filters.locations.length && !filters.locations.includes(p.city)) return false;
       if (filters.verifiedOnly && !p.verified) return false;
-      if (filters.sellerType && p.sellerType !== filters.sellerType) return false;
-      if (p.price > filters.maxPrice) return false;
+      if (filters.sellerType && filters.sellerType === "shop") return false;
+      if (p.price < filters.minPrice || p.price > filters.maxPrice) return false;
       return true;
     });
 
     switch (sort) {
       case "newest":
-        list = [...list].sort((a, b) => +new Date(b.postedDate) - +new Date(a.postedDate));
+        list = [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
         break;
       case "price-asc":
         list = [...list].sort((a, b) => a.price - b.price);
@@ -41,10 +41,10 @@ export function MarketplaceBrowser() {
         list = [...list].sort((a, b) => b.price - a.price);
         break;
       default:
-        list = [...list].sort((a, b) => b.score - a.score);
+        list = [...list].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     }
     return list;
-  }, [query, filters, sort]);
+  }, [initialListings, query, filters, sort]);
 
   return (
     <div>

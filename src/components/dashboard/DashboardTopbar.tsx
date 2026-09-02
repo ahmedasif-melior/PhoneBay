@@ -18,7 +18,7 @@ export function DashboardTopbar({ userName = "Ahmed Bin Asif" }: { userName?: st
         <div className="flex items-center gap-3 ml-auto">
           <button
             aria-label="Notifications"
-            className="relative h-10 w-10 rounded-full flex items-center justify-center hover:bg-black/[0.04]"
+            className="relative h-10 w-10 rounded-full flex items-center justify-center hover:bg-black/4"
           >
             <Bell className="h-5 w-5 text-ink-soft" />
             <span className="absolute top-2 right-2.5 h-2 w-2 rounded-full bg-danger" />

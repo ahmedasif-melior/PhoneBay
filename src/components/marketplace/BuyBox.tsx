@@ -10,11 +10,69 @@ import type { Phone } from "@/data/phones";
 
 export function BuyBox({ phone }: { phone: Phone }) {
   const [saved, setSaved] = React.useState(phone.saved);
+  const [savePending, setSavePending] = React.useState(false);
   const [buyOpen, setBuyOpen] = React.useState(false);
   const [messageOpen, setMessageOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
   const [orderPlaced, setOrderPlaced] = React.useState(false);
   const [messageSent, setMessageSent] = React.useState(false);
+  const [messageText, setMessageText] = React.useState(`Hi, is the ${phone.model} still available?`);
+  const [orderError, setOrderError] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const handleSaveToggle = async () => {
+    setSavePending(true);
+    try {
+      const response = await fetch(`/api/listings/${phone.id}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) return;
+      const result = await response.json();
+      setSaved(Boolean(result.saved));
+    } finally {
+      setSavePending(false);
+    }
+  };
+
+  const handlePlaceOrder = async () => {
+    setSubmitting(true);
+    setOrderError("");
+    const response = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ listingId: phone.id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setSubmitting(false);
+
+    if (!response.ok) {
+      setOrderError(result.error ?? "Unable to place this order right now.");
+      return;
+    }
+
+    setOrderPlaced(true);
+  };
+
+  const handleSendMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!messageText.trim()) return;
+
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sellerId: phone.sellerId,
+        listingId: phone.id,
+        text: messageText.trim(),
+      }),
+    });
+
+    if (response.ok) {
+      setMessageSent(true);
+      setMessageText("");
+    }
+  };
 
   return (
     <div className="sticky top-24 bg-surface border border-border rounded-[var(--pb-radius-lg)] p-6">
@@ -33,8 +91,9 @@ export function BuyBox({ phone }: { phone: Phone }) {
           <Button
             variant="ghost"
             className="flex-1"
-            onClick={() => setSaved((s) => !s)}
+            onClick={handleSaveToggle}
             aria-pressed={saved}
+            disabled={savePending}
           >
             <Heart className={saved ? "h-4 w-4 fill-danger text-danger" : "h-4 w-4"} />
             {saved ? "Saved" : "Save"}
@@ -51,7 +110,7 @@ export function BuyBox({ phone }: { phone: Phone }) {
         Payments are protected — funds are held until you confirm the device on delivery.
       </div>
 
-      <Modal open={buyOpen} onClose={() => { setBuyOpen(false); setOrderPlaced(false); }} title={orderPlaced ? undefined : "Confirm your order"}>
+      <Modal open={buyOpen} onClose={() => { setBuyOpen(false); setOrderPlaced(false); setOrderError(""); }} title={orderPlaced ? undefined : "Confirm your order"}>
         {orderPlaced ? (
           <div className="text-center py-2">
             <div className="h-14 w-14 rounded-full bg-verify-tint text-verify flex items-center justify-center mx-auto mb-4">
@@ -72,9 +131,10 @@ export function BuyBox({ phone }: { phone: Phone }) {
               <span className="font-data font-medium">{formatPKR(phone.price)}</span>
             </div>
             <Alert tone="info">
-              This is a frontend demo — no real payment will be processed.
+              This purchase is connected to the live PhoneBay order API. No real payment is processed in this demo.
             </Alert>
-            <Button fullWidth onClick={() => setOrderPlaced(true)}>
+            {orderError && <Alert tone="danger">{orderError}</Alert>}
+            <Button fullWidth loading={submitting} onClick={handlePlaceOrder}>
               Confirm and pay
             </Button>
           </div>
@@ -94,15 +154,11 @@ export function BuyBox({ phone }: { phone: Phone }) {
             </Button>
           </div>
         ) : (
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setMessageSent(true);
-            }}
-          >
+          <form className="flex flex-col gap-4" onSubmit={handleSendMessage}>
             <textarea
               required
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
               placeholder={`Hi, is the ${phone.model} still available?`}
               className="w-full min-h-28 rounded-[var(--pb-radius-sm)] border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand"
             />

@@ -11,12 +11,45 @@ import { Avatar } from "@/components/ui/Avatar";
 import { TestingRow } from "@/components/verification/TestingRow";
 import { Card } from "@/components/ui/Card";
 import { formatDate } from "@/lib/utils";
-import { phones, getPhoneById } from "@/data/phones";
+import { listingsRepo } from "@/server/repositories/listings";
+import type { ListingRecord } from "@/server/types";
 import { getSellerById } from "@/data/sellers";
 import { reviews } from "@/data/reviews";
 
-export function generateStaticParams() {
-  return phones.map((p) => ({ id: p.id }));
+function listingToPhone(listing: ListingRecord) {
+  const fallback = "/images/phones/iphone-15.webp";
+  return {
+    id: listing.id,
+    brand: listing.brand,
+    model: listing.model,
+    storage: listing.storage,
+    color: listing.color ?? "",
+    condition: listing.condition as "Excellent" | "Good" | "Fair",
+    price: listing.price,
+    negotiable: listing.negotiable,
+    location: listing.city,
+    image: listing.imageUrls[0] || fallback,
+    images: listing.imageUrls.length ? listing.imageUrls : [fallback],
+    verified: listing.verified,
+    score: listing.score ?? 0,
+    batteryHealth: listing.batteryHealth ?? 0,
+    sellerId: listing.sellerId,
+    sellerType: "individual" as const,
+    views: listing.views,
+    messages: 0,
+    saved: false,
+    status: listing.status,
+    postedDate: listing.createdAt,
+    description: listing.description ?? "",
+    specs: [
+      { label: "Storage", value: listing.storage },
+      { label: "Color", value: listing.color ?? "Not specified" },
+      { label: "Condition", value: listing.condition },
+      { label: "Location", value: listing.city },
+    ],
+    testResults: [] as { label: string; status: "pass" | "fail" }[],
+    certificateId: undefined,
+  };
 }
 
 export async function generateMetadata({
@@ -25,8 +58,9 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const phone = getPhoneById(id);
-  if (!phone) return {};
+  const listing = listingsRepo.findById(id);
+  if (!listing) return {};
+  const phone = listingToPhone(listing);
   return {
     title: `${phone.model} — ${phone.storage}`,
     description: phone.description,
@@ -39,8 +73,9 @@ export default async function ProductDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const phone = getPhoneById(id);
-  if (!phone) notFound();
+  const listing = listingsRepo.findById(id);
+  if (!listing || listing.status !== "active") notFound();
+  const phone = listingToPhone(listing);
 
   const seller = getSellerById(phone.sellerId);
 

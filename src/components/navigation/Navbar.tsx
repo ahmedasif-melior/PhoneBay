@@ -9,6 +9,7 @@ import { Menu, X, ShieldCheck, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/navigation/Logo";
+import type { UserRecord } from "@/server/types";
 
 const links = [
   { href: "/marketplace", label: "Marketplace" },
@@ -18,7 +19,11 @@ const links = [
   { href: "/for-shops", label: "For Shops" },
 ];
 
-export function Navbar() {
+interface NavbarProps {
+  user?: UserRecord | null;
+}
+
+export function Navbar({ user }: NavbarProps) {
   const [open, setOpen] = React.useState(false);
   const pathname = usePathname();
 
@@ -108,11 +113,18 @@ export function Navbar() {
                       rounded-full
                       bg-[#7567F8]
                     "
-                    transition={{
-                      type: "spring",
-                      stiffness: 500,
-                      damping: 35,
-                    }}
+                     animate={{ width: [4, 10, 4] }}
+                      transition={{
+                        width: {
+                          duration: 0.4,
+                          times: [0, 0.5, 1],
+                        },
+                        layout: {
+                          type: "spring",
+                          stiffness: 500,
+                          damping: 35,
+                        },
+                      }}
                   />
                 )}
               </Link>
@@ -124,77 +136,142 @@ export function Navbar() {
             DESKTOP ACTIONS
         ===================================================== */}
         <div className="hidden items-center gap-2 lg:flex">
-          <Button
-            href="/auth/signin"
-            variant="ghost"
-            size="sm"
-            className="
-              text-[#5F5B68]
-              hover:bg-black/[0.035]
-              hover:text-[#17151F]
-            "
-          >
-            Sign In
-          </Button>
-
-          <Link
-            href="/dashboard/listings/create"
-            className="
-              group
-              relative
-              inline-flex
-              h-9
-              items-center
-              justify-center
-              gap-1.5
-              overflow-hidden
-              rounded-xl
-              bg-gradient-to-r
-              from-[#7567F8]
-              via-[#765BEA]
-              to-[#16BFA0]
-              px-4
-              text-[13px]
-              font-semibold
-              text-white
-              shadow-[0_6px_20px_rgba(108,99,255,0.20)]
-              transition-all
-              duration-300
-              hover:-translate-y-px
-              hover:shadow-[0_8px_25px_rgba(108,99,255,0.28)]
-            "
-          >
-            {/* Shine */}
-            <span
-              aria-hidden="true"
+          {!user && (
+            <Button
+              href="/user/sign-in"
+              variant="ghost"
+              size="sm"
               className="
-                absolute
-                inset-0
-                -translate-x-full
-                bg-gradient-to-r
-                from-transparent
-                via-white/15
-                to-transparent
-                transition-transform
-                duration-700
-                group-hover:translate-x-full
+                text-[#5F5B68]
+                hover:bg-black/[0.035]
+                hover:text-[#17151F]
               "
-            />
+            >
+              Sign In
+            </Button>
+          )}
 
-            <span className="relative">Sell Your Phone</span>
-
-            <ArrowUpRight
+          {user ? (
+            <Link
+              href={user.role === "ADMIN" ? "/admin" : user.role === "SHOP" ? "/shop/dashboard" : "/dashboard"}
               className="
+                group
                 relative
-                h-3.5
-                w-3.5
-                transition-transform
-                duration-200
-                group-hover:translate-x-0.5
-                group-hover:-translate-y-0.5
+                inline-flex
+                h-9
+                items-center
+                justify-center
+                gap-1.5
+                overflow-hidden
+                rounded-xl
+                bg-gradient-to-r
+                from-[#7567F8]
+                via-[#765BEA]
+                to-[#16BFA0]
+                px-4
+                text-[13px]
+                font-semibold
+                text-white
+                shadow-[0_6px_20px_rgba(108,99,255,0.20)]
+                transition-all
+                duration-300
+                hover:-translate-y-px
+                hover:shadow-[0_8px_25px_rgba(108,99,255,0.28)]
               "
-            />
-          </Link>
+            >
+              {/* Shine */}
+              <span
+                aria-hidden="true"
+                className="
+                  absolute
+                  inset-0
+                  -translate-x-full
+                  bg-gradient-to-r
+                  from-transparent
+                  via-white/15
+                  to-transparent
+                  transition-transform
+                  duration-700
+                  group-hover:translate-x-full
+                "
+              />
+
+              <span className="relative">
+                {user.role === "ADMIN" ? "Admin Console" : user.role === "SHOP" ? "Shop Dashboard" : "Dashboard"}
+              </span>
+
+              <ArrowUpRight
+                className="
+                  relative
+                  h-3.5
+                  w-3.5
+                  transition-transform
+                  duration-200
+                  group-hover:translate-x-0.5
+                  group-hover:-translate-y-0.5
+                "
+              />
+            </Link>
+          ) : (
+            <Link
+              href="/dashboard/listings/new"
+              className="
+                group
+                relative
+                inline-flex
+                h-9
+                items-center
+                justify-center
+                gap-1.5
+                overflow-hidden
+                rounded-xl
+                bg-gradient-to-r
+                from-[#7567F8]
+                via-[#765BEA]
+                to-[#16BFA0]
+                px-4
+                text-[13px]
+                font-semibold
+                text-white
+                shadow-[0_6px_20px_rgba(108,99,255,0.20)]
+                transition-all
+                duration-300
+                hover:-translate-y-px
+                hover:shadow-[0_8px_25px_rgba(108,99,255,0.28)]
+              "
+            >
+              {/* Shine */}
+              <span
+                aria-hidden="true"
+                className="
+                  absolute
+                  inset-0
+                  -translate-x-full
+                  bg-gradient-to-r
+                  from-transparent
+                  via-white/15
+                  to-transparent
+                  transition-transform
+                  duration-700
+                  group-hover:translate-x-full
+                "
+              />
+
+              <span className="relative">Sell Your Phone</span>
+
+              <ArrowUpRight
+                className="
+                  relative
+                  h-3.5
+                  w-3.5
+                  transition-transform
+                  duration-200
+                  group-hover:translate-x-0.5
+                  group-hover:-translate-y-0.5
+                "
+              />
+            </Link>
+          )}
         </div>
 
         {/* =====================================================
@@ -346,95 +423,139 @@ export function Navbar() {
 
               {/* Mobile bottom area */}
               <div className="mt-auto border-t border-black/[0.06] p-5">
-                {/* Trust message */}
-                <div
-                  className="
-                    mb-5
-                    rounded-2xl
-                    border
-                    border-[#16BFA0]/15
-                    bg-[#16BFA0]/[0.045]
-                    p-4
-                  "
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="
-                        flex
-                        h-9 w-9
-                        shrink-0
-                        items-center justify-center
-                        rounded-xl
-                        bg-[#16BFA0]/10
-                        text-[#0F9F86]
-                      "
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                    </div>
-
-                    <div>
-                      <div className="text-xs font-semibold text-[#17151F]">
-                        Built around trust
+                {/* Trust message - only show for guests */}
+                {!user && (
+                  <div
+                    className="
+                      mb-5
+                      rounded-2xl
+                      border
+                      border-[#16BFA0]/15
+                      bg-[#16BFA0]/[0.045]
+                      p-4
+                    "
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="
+                          flex
+                          h-9 w-9
+                          shrink-0
+                          items-center justify-center
+                          rounded-xl
+                          bg-[#16BFA0]/10
+                          text-[#0F9F86]
+                        "
+                      >
+                        <ShieldCheck className="h-4 w-4" />
                       </div>
 
-                      <p className="mt-1 text-[11px] leading-5 text-[#77727F]">
-                        Verified sellers, tested devices, and transparent
-                        history.
-                      </p>
+                      <div>
+                        <div className="text-xs font-semibold text-[#17151F]">
+                          Built around trust
+                        </div>
+
+                        <p className="mt-1 text-[11px] leading-5 text-[#77727F]">
+                          Verified sellers, tested devices, and transparent
+                          history.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex flex-col gap-2.5">
-                  <Button
-                    href="/auth/signin"
-                    variant="outline"
-                    fullWidth
-                    className="
-                      border-black/[0.08]
-                      bg-white
-                      text-[#3F3B46]
-                      hover:bg-[#F7F6FA]
-                    "
-                  >
-                    Sign In
-                  </Button>
-
-                  <Link
-                    href="/dashboard/listings/create"
-                    className="
-                      group
-                      relative
-                      flex
-                      h-11
-                      items-center
-                      justify-center
-                      gap-2
-                      overflow-hidden
-                      rounded-xl
-                      bg-gradient-to-r
-                      from-[#7567F8]
-                      via-[#765BEA]
-                      to-[#16BFA0]
-                      text-sm
-                      font-semibold
-                      text-white
-                      shadow-[0_8px_25px_rgba(108,99,255,0.20)]
-                    "
-                  >
-                    <span className="relative">Sell Your Phone</span>
-
-                    <ArrowUpRight
+                  {!user && (
+                    <Button
+                      href="/user/sign-in"
+                      variant="outline"
+                      fullWidth
                       className="
-                        relative
-                        h-4
-                        w-4
-                        transition-transform
-                        group-hover:-translate-y-0.5
-                        group-hover:translate-x-0.5
+                        border-black/[0.08]
+                        bg-white
+                        text-[#3F3B46]
+                        hover:bg-[#F7F6FA]
                       "
-                    />
-                  </Link>
+                    >
+                      Sign In
+                    </Button>
+                  )}
+
+                  {user ? (
+                    <Link
+                      href={user.role === "ADMIN" ? "/admin" : user.role === "SHOP" ? "/shop/dashboard" : "/dashboard"}
+                      className="
+                        group
+                        relative
+                        flex
+                        h-11
+                        items-center
+                        justify-center
+                        gap-2
+                        overflow-hidden
+                        rounded-xl
+                        bg-gradient-to-r
+                        from-[#7567F8]
+                        via-[#765BEA]
+                        to-[#16BFA0]
+                        text-sm
+                        font-semibold
+                        text-white
+                        shadow-[0_8px_25px_rgba(108,99,255,0.20)]
+                      "
+                    >
+                      <span className="relative">
+                        {user.role === "ADMIN" ? "Admin Console" : user.role === "SHOP" ? "Shop Dashboard" : "Dashboard"}
+                      </span>
+
+                      <ArrowUpRight
+                        className="
+                          relative
+                          h-4
+                          w-4
+                          transition-transform
+                          group-hover:-translate-y-0.5
+                          group-hover:translate-x-0.5
+                        "
+                      />
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/dashboard/listings/new"
+                      className="
+                        group
+                        relative
+                        flex
+                        h-11
+                        items-center
+                        justify-center
+                        gap-2
+                        overflow-hidden
+                        rounded-xl
+                        bg-gradient-to-r
+                        from-[#7567F8]
+                        via-[#765BEA]
+                        to-[#16BFA0]
+                        text-sm
+                        font-semibold
+                        text-white
+                        shadow-[0_8px_25px_rgba(108,99,255,0.20)]
+                      "
+                    >
+                      <span className="relative">Sell Your Phone</span>
+
+                      <ArrowUpRight
+                        className="
+                          relative
+                          h-4
+                          w-4
+                          transition-transform
+                          group-hover:-translate-y-0.5
+                          group-hover:translate-x-0.5
+                        "
+                      />
+                    </Link>
+                  )}
                 </div>
               </div>
             </motion.div>

@@ -11,6 +11,7 @@ interface UserRow {
   bio: string | null;
   city: string | null;
   role: Role;
+  account_purpose: string | null;
   email_verified: number;
   phone_verified: number;
   trust_score: number;
@@ -29,6 +30,7 @@ function mapRow(row: UserRow): UserRecord {
     bio: row.bio,
     city: row.city,
     role: row.role,
+    accountPurpose: row.account_purpose as UserRecord["accountPurpose"],
     emailVerified: !!row.email_verified,
     phoneVerified: !!row.phone_verified,
     trustScore: row.trust_score,
@@ -62,11 +64,12 @@ export const usersRepo = {
     phone?: string | null;
     city?: string | null;
     role?: Role;
+    accountPurpose?: UserRecord["accountPurpose"];
   }): UserRecord {
     const id = generateId("usr_");
     db.prepare(
-      `INSERT INTO users (id, email, password_hash, full_name, phone, city, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (id, email, password_hash, full_name, phone, city, role, account_purpose)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.email.toLowerCase().trim(),
@@ -74,7 +77,8 @@ export const usersRepo = {
       input.fullName.trim(),
       input.phone ?? null,
       input.city ?? null,
-      input.role ?? "USER"
+      input.role ?? "USER",
+      input.accountPurpose ?? null
     );
     return this.findById(id)!;
   },
@@ -87,6 +91,7 @@ export const usersRepo = {
       city: string | null;
       bio: string | null;
       avatarUrl: string | null;
+      accountPurpose: UserRecord["accountPurpose"];
       emailVerified: boolean;
       phoneVerified: boolean;
     }>
@@ -97,6 +102,7 @@ export const usersRepo = {
       city: "city",
       bio: "bio",
       avatarUrl: "avatar_url",
+      accountPurpose: "account_purpose",
       emailVerified: "email_verified",
       phoneVerified: "phone_verified",
     };

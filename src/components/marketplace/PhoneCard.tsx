@@ -4,23 +4,46 @@ import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { MapPin, Heart } from "lucide-react";
-import { Rating } from "@/components/ui/Rating";
 import { VerificationBadge } from "@/components/ui/Badge";
 import { SignalScore } from "@/components/ui/Rating";
 import { formatPKR, cn } from "@/lib/utils";
+import type { ListingRecord } from "@/server/types";
 import type { Phone } from "@/data/phones";
-import { getSellerById } from "@/data/sellers";
 
-export function PhoneCard({ phone }: { phone: Phone }) {
-  const [saved, setSaved] = React.useState(phone.saved);
-  const seller = getSellerById(phone.sellerId);
+export function PhoneCard({ phone }: { phone: ListingRecord | Phone }) {
+  const isListing = "imageUrls" in phone;
+  const [saved, setSaved] = React.useState(isListing ? false : phone.saved);
+  const [saving, setSaving] = React.useState(false);
+  const image = isListing ? phone.imageUrls[0] || "/images/phones/iphone-15.webp" : phone.image;
+  const city = isListing ? phone.city : phone.location;
+
+  const handleSaveToggle = async (event: React.MouseEvent) => {
+    event.preventDefault();
+    if (!isListing) {
+      setSaved((current) => !current);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/listings/${phone.id}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) return;
+      const result = await response.json();
+      setSaved(Boolean(result.saved));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="group relative bg-surface border border-border rounded-[var(--pb-radius-md)] overflow-hidden transition-all duration-200 hover:border-border-strong hover:shadow-[var(--pb-shadow-md)] hover:-translate-y-0.5">
       <Link href={`/marketplace/${phone.id}`} className="block">
         <div className="relative aspect-[4/3] bg-bg flex items-center justify-center">
           <Image
-            src={phone.image}
+            src={image}
             alt={`${phone.brand} ${phone.model}`}
             width={220}
             height={220}
@@ -30,13 +53,11 @@ export function PhoneCard({ phone }: { phone: Phone }) {
       </Link>
 
       <button
-        onClick={(e) => {
-          e.preventDefault();
-          setSaved((s) => !s);
-        }}
+        onClick={handleSaveToggle}
+        disabled={saving}
         aria-pressed={saved}
         aria-label={saved ? "Remove from saved" : "Save phone"}
-        className="absolute top-3 right-3 h-9 w-9 rounded-full bg-surface/90 backdrop-blur border border-border flex items-center justify-center"
+        className="absolute top-3 right-3 h-9 w-9 rounded-full bg-surface/90 backdrop-blur border border-border flex items-center justify-center disabled:opacity-60"
       >
         <Heart
           className={cn("h-4 w-4", saved ? "fill-danger text-danger" : "text-ink-soft")}
@@ -54,7 +75,7 @@ export function PhoneCard({ phone }: { phone: Phone }) {
           <h3 className="font-semibold text-ink text-[15px] leading-tight">
             {phone.model}
           </h3>
-          {phone.verified && <SignalScore score={phone.score} size="sm" showLabel={false} />}
+          {phone.verified && (isListing ? phone.score !== null : true) && <SignalScore score={phone.score ?? 0} size="sm" showLabel={false} />}
         </div>
         <p className="text-xs text-ink-faint mt-1">
           {phone.storage} · {phone.condition}
@@ -64,9 +85,8 @@ export function PhoneCard({ phone }: { phone: Phone }) {
         </p>
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
           <span className="flex items-center gap-1 text-xs text-ink-faint">
-            <MapPin className="h-3 w-3" /> {phone.location}
+            <MapPin className="h-3 w-3" /> {city}
           </span>
-          {seller && <Rating value={seller.rating} size="sm" />}
         </div>
       </Link>
     </div>

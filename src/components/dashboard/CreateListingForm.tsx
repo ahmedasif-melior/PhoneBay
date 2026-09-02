@@ -21,6 +21,7 @@ interface ListingData {
   batteryHealth: number;
   repairHistory: string;
   photoCount: number;
+  imageUrls: string[];
   price: string;
   negotiable: boolean;
   city: string;
@@ -37,6 +38,7 @@ const initial: ListingData = {
   batteryHealth: 90,
   repairHistory: "",
   photoCount: 0,
+  imageUrls: [],
   price: "",
   negotiable: true,
   city: "",
@@ -49,9 +51,26 @@ export function CreateListingForm() {
   const [step, setStep] = React.useState(0);
   const [data, setData] = React.useState<ListingData>(initial);
   const [published, setPublished] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState("");
 
   const set = <K extends keyof ListingData>(key: K, value: ListingData[K]) =>
     setData((d) => ({ ...d, [key]: value }));
+
+  const addPhotos = (files: FileList | null) => {
+    if (!files) return;
+    const selected = Array.from(files).slice(0, 8 - data.imageUrls.length);
+    Promise.all(selected.map((file) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }))).then((images) => setData((current) => ({
+      ...current,
+      imageUrls: [...current.imageUrls, ...images],
+      photoCount: current.imageUrls.length + images.length,
+    })));
+  };
 
   const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
@@ -71,6 +90,38 @@ export function CreateListingForm() {
       default:
         return true;
     }
+  };
+
+  const publish = async () => {
+    setSubmitting(true);
+    setError("");
+    const response = await fetch("/api/listings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand: data.brand,
+        model: data.model,
+        storage: data.storage,
+        color: data.color || null,
+        condition: data.condition,
+        price: Number(data.price),
+        negotiable: data.negotiable,
+        city: data.city,
+        area: data.area || null,
+        batteryHealth: data.batteryHealth,
+        repairHistory: data.repairHistory || null,
+        photoCount: data.photoCount,
+        imageUrls: data.imageUrls,
+        requestVerification: data.requestVerification,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    setSubmitting(false);
+    if (!response.ok) {
+      setError(result.error ?? "Unable to publish this listing. Please try again.");
+      return;
+    }
+    setPublished(true);
   };
 
   if (published) {
@@ -97,6 +148,7 @@ export function CreateListingForm() {
       <StepProgress steps={steps} current={step} />
 
       <div className="mt-8 min-h-[280px]">
+        {error && <Alert tone="danger" className="mb-5">{error}</Alert>}
         {step === 0 && (
           <div className="flex flex-col gap-4">
             <h2 className="font-semibold text-lg text-ink">Device details</h2>
@@ -184,12 +236,12 @@ export function CreateListingForm() {
             <h2 className="font-semibold text-lg text-ink">Photos</h2>
             <p className="text-sm text-ink-soft">Add at least one clear photo of the device.</p>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {Array.from({ length: data.photoCount }).map((_, i) => (
+              {data.imageUrls.map((image, i) => (
                 <div key={i} className="relative aspect-square rounded-[var(--pb-radius-sm)] bg-brand-tint border border-border flex items-center justify-center">
-                  <ImagePlus className="h-6 w-6 text-brand" />
+                  <img src={image} alt={`Device photo ${i + 1}`} className="h-full w-full object-cover rounded-[var(--pb-radius-sm)]" />
                   <button
                     type="button"
-                    onClick={() => set("photoCount", data.photoCount - 1)}
+                    onClick={() => setData((current) => ({ ...current, imageUrls: current.imageUrls.filter((_, index) => index !== i), photoCount: current.photoCount - 1 }))}
                     aria-label="Remove photo"
                     className="absolute -top-1.5 -right-1.5 h-5 w-5 bg-ink text-white rounded-full flex items-center justify-center"
                   >
@@ -197,10 +249,10 @@ export function CreateListingForm() {
                   </button>
                 </div>
               ))}
-              {data.photoCount < 8 && (
+              {data.imageUrls.length < 8 && (
                 <button
                   type="button"
-                  onClick={() => set("photoCount", data.photoCount + 1)}
+                  onClick={() => document.getElementById("listing-photos")?.click()}
                   className="aspect-square rounded-[var(--pb-radius-sm)] border-2 border-dashed border-border-strong flex flex-col items-center justify-center gap-1.5 text-ink-faint hover:border-brand hover:text-brand"
                 >
                   <ImagePlus className="h-6 w-6" />
@@ -208,7 +260,8 @@ export function CreateListingForm() {
                 </button>
               )}
             </div>
-            <HelperText>This is a frontend demo — photo placeholders only, no upload occurs.</HelperText>
+            <input id="listing-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" onChange={(e) => addPhotos(e.target.files)} />
+            <HelperText>Upload up to 8 JPG, PNG, or WebP images. Images are saved with your listing.</HelperText>
           </div>
         )}
 
@@ -282,7 +335,9 @@ export function CreateListingForm() {
             Continue
           </Button>
         ) : (
-          <Button onClick={() => setPublished(true)}>Publish Listing</Button>
+          <Button onClick={publish} loading={submitting}>
+            Publish Listing
+          </Button>
         )}
       </div>
     </Card>

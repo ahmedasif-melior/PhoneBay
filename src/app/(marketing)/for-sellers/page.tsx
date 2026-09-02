@@ -27,7 +27,7 @@ export default function ForSellersPage() {
               title="Sell your phone to buyers who trust the process."
               description="List for free, get verified, and get paid securely — all from one dashboard."
             />
-            <Button href="/dashboard/listings/create" size="lg" className="mt-6">
+            <Button href="/dashboard/listings/new" size="lg" className="mt-6">
               Sell Your Phone
             </Button>
           </div>
@@ -69,7 +69,7 @@ export default function ForSellersPage() {
 
       <Section className="text-center">
         <h2 className="text-3xl font-semibold text-ink">List your first phone today.</h2>
-        <Button href="/dashboard/listings/create" size="lg" className="mt-6">
+        <Button href="/dashboard/listings/new" size="lg" className="mt-6">
           Create a Listing
         </Button>
       </Section>

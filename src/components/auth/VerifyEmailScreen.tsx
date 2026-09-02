@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
-export function VerifyEmailScreen({ email = "you@example.com" }: { email?: string }) {
+export function VerifyEmailScreen({ email = "you@example.com", signUpPath = "/user/sign-up" }: { email?: string; signUpPath?: string }) {
   const router = useRouter();
   const [resent, setResent] = React.useState(false);
   const [cooldown, setCooldown] = React.useState(0);
@@ -51,7 +51,7 @@ export function VerifyEmailScreen({ email = "you@example.com" }: { email?: strin
           {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend email"}
         </button>
         <span className="text-border-strong">·</span>
-        <a href="/auth/signup" className="font-medium text-ink-soft">
+        <a href={signUpPath} className="font-medium text-ink-soft">
           Change email
         </a>
       </div>

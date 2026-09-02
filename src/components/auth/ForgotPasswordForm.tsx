@@ -6,7 +6,11 @@ import { ArrowLeft, Mail, MailCheck } from "lucide-react";
 import { Input, Label } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 
-export function ForgotPasswordForm() {
+interface ForgotPasswordFormProps {
+  signInPath?: string;
+}
+
+export function ForgotPasswordForm({ signInPath = "/user/sign-in" }: ForgotPasswordFormProps) {
   const [sent, setSent] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [email, setEmail] = React.useState("");
@@ -35,7 +39,7 @@ export function ForgotPasswordForm() {
         <Button variant="outline" fullWidth className="mt-7" onClick={() => setSent(false)}>
           Use a different email
         </Button>
-        <Link href="/auth/signin" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand mt-5">
+        <Link href={signInPath} className="inline-flex items-center gap-1.5 text-sm font-medium text-brand mt-5">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
         </Link>
       </div>
@@ -66,7 +70,7 @@ export function ForgotPasswordForm() {
           Send reset link
         </Button>
       </form>
-      <Link href="/auth/signin" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand mt-6">
+      <Link href={signInPath} className="inline-flex items-center gap-1.5 text-sm font-medium text-brand mt-6">
         <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
       </Link>
     </div>

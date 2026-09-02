@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -12,18 +13,44 @@ import {
   FileBadge,
   BookOpenCheck,
   Settings,
+  Shield,
+  Users,
+  ReceiptText,
+  BriefcaseBusiness,
+  Plus,
+  BadgeCheck,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const items = [
+function isAdminRole(role?: string | null) {
+  return role === "ADMIN";
+}
+
+const userItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutGrid },
   { href: "/dashboard/listings", label: "My Listings", icon: List },
+  { href: "/dashboard/listings/new", label: "New Listing", icon: Plus },
+  { href: "/dashboard/purchases", label: "Purchases", icon: Package },
+  { href: "/dashboard/sales", label: "Sales", icon: ReceiptText },
   { href: "/dashboard/saved", label: "Saved", icon: Bookmark },
   { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
-  { href: "/dashboard/orders", label: "Orders", icon: Package },
   { href: "/dashboard/verification", label: "Verification", icon: ShieldCheck },
   { href: "/dashboard/certificates", label: "Certificates", icon: FileBadge },
   { href: "/dashboard/passport", label: "Device Passport", icon: BookOpenCheck },
+];
+
+const adminItems = [
+  { href: "/admin", label: "Admin Overview", icon: Shield },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/sellers", label: "Sellers", icon: ReceiptText },
+  { href: "/admin/shops", label: "Shops", icon: BriefcaseBusiness },
+  { href: "/admin/listings", label: "Listings", icon: List },
+  { href: "/admin/orders", label: "Orders", icon: ReceiptText },
+  { href: "/admin/verification-requests", label: "Verification", icon: BadgeCheck },
+  { href: "/admin/reports", label: "Reports", icon: TrendingUp },
+  { href: "/admin/disputes", label: "Disputes", icon: MessageSquare },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 const bottomItems = [
@@ -31,17 +58,40 @@ const bottomItems = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
-export function DashboardSidebarNav() {
+export function DashboardSidebarNav({ role }: { role?: string | null }) {
   const pathname = usePathname();
+  const [activeHash, setActiveHash] = React.useState("");
+  const isAdmin = isAdminRole(role);
+  const items = isAdmin ? adminItems : userItems;
+
+  React.useEffect(() => {
+    const syncHash = () => setActiveHash(window.location.hash);
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
+
+  const isActive = (href: string) => {
+    const [targetPath, hash] = href.split("#");
+    const expectedHash = hash ? `#${hash}` : "";
+    if (pathname !== targetPath) return false;
+    if (!hash) return activeHash === "" || activeHash === "#overview";
+    return activeHash === expectedHash;
+  };
+
   return (
     <nav className="flex flex-col gap-1" aria-label="Dashboard">
       {items.map((item) => (
-        <SidebarLink key={item.href} item={item} active={pathname === item.href} />
+        <SidebarLink key={item.href} item={item} active={isActive(item.href)} />
       ))}
-      <div className="my-2 h-px bg-border" />
-      {bottomItems.map((item) => (
-        <SidebarLink key={item.href} item={item} active={pathname === item.href} />
-      ))}
+      {!isAdmin && (
+        <>
+          <div className="my-2 h-px bg-border" />
+          {bottomItems.map((item) => (
+            <SidebarLink key={item.href} item={item} active={pathname === item.href} />
+          ))}
+        </>
+      )}
     </nav>
   );
 }
@@ -70,7 +120,17 @@ function SidebarLink({
 export const mobileNavItems = [
   { href: "/dashboard", label: "Home", icon: LayoutGrid },
   { href: "/dashboard/listings", label: "Listings", icon: List },
+  { href: "/dashboard/purchases", label: "Purchases", icon: Package },
+  { href: "/dashboard/sales", label: "Sales", icon: ReceiptText },
   { href: "/dashboard/messages", label: "Messages", icon: MessageSquare },
-  { href: "/dashboard/orders", label: "Orders", icon: Package },
   { href: "/dashboard/profile", label: "Profile", icon: Settings },
+];
+
+export const adminMobileNavItems = [
+  { href: "/admin", label: "Overview", icon: Shield },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/listings", label: "Listings", icon: List },
+  { href: "/admin/orders", label: "Orders", icon: ReceiptText },
+  { href: "/admin/shops", label: "Shops", icon: BriefcaseBusiness },
+  { href: "/admin/reports", label: "Reports", icon: TrendingUp },
 ];

@@ -7,13 +7,13 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const supabase = getSupabase();
   if (!code || !supabase) {
-    return NextResponse.redirect(new URL("/auth/signin?error=oauth", request.url));
+    return NextResponse.redirect(new URL("/user/sign-in?error=oauth", request.url));
   }
 
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   const email = data.user?.email;
   if (error || !email) {
-    return NextResponse.redirect(new URL("/auth/signin?error=oauth", request.url));
+    return NextResponse.redirect(new URL("/user/sign-in?error=oauth", request.url));
   }
 
   let user = usersRepo.findByEmail(email);

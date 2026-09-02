@@ -5,11 +5,19 @@ export const signUpSchema = z.object({
   email: z.string().trim().email("Please enter a valid email."),
   phone: z.string().trim().optional().nullable(),
   password: z.string().min(8, "Password must be at least 8 characters."),
+  accountPurpose: z.enum(["buyer", "seller", "both", "shop"]).optional().nullable(),
 });
 
 export const signInSchema = z.object({
   email: z.string().trim().email("Please enter a valid email."),
   password: z.string().min(1, "Please enter your password."),
+});
+
+export const profileUpdateSchema = z.object({
+  fullName: z.string().trim().min(2, "Please enter your full name.").optional(),
+  city: z.string().trim().min(1, "City is required. ").optional().nullable(),
+  bio: z.string().trim().max(500, "Bio is too long.").optional().nullable(),
+  accountPurpose: z.enum(["buyer", "seller", "both", "shop"]).optional().nullable(),
 });
 
 export const createListingSchema = z.object({
@@ -26,6 +34,7 @@ export const createListingSchema = z.object({
   batteryHealth: z.number().int().min(0).max(100).optional().nullable(),
   repairHistory: z.string().trim().optional().nullable(),
   photoCount: z.number().int().min(0).max(12).default(0),
+  imageUrls: z.array(z.string().max(3_000_000)).max(8).default([]),
   requestVerification: z.boolean().default(false),
 });
 

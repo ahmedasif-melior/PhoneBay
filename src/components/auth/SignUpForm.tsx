@@ -8,11 +8,53 @@ import { Input, Label, Checkbox } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { GoogleButton, Divider } from "@/components/auth/AuthWidgets";
 
-export function SignUpForm() {
+export type SignUpAudience = "user" | "shop";
+
+interface SignUpFormProps {
+  /** Which account type this form creates. Drives copy, submit endpoint, and redirects. */
+  audience?: SignUpAudience;
+  /** Override the sign-in link. Defaults to `/auth/{audience}/sign-in`. */
+  signInPath?: string;
+  /** Override the post-signup redirect when email verification isn't required. Defaults per audience. */
+  successPath?: string;
+}
+
+const AUDIENCE_COPY: Record<SignUpAudience, { title: string; subtitle: string; namePlaceholder: string }> = {
+  user: {
+    title: "Create your PhoneBay account",
+    subtitle: "Buy, sell, and verify with confidence.",
+    namePlaceholder: "Full Name",
+  },
+  shop: {
+    title: "Register your shop on PhoneBay",
+    subtitle: "Offer verification, testing, and buyback as a trusted partner.",
+    namePlaceholder: "Business Name",
+  },
+};
+
+// Where each audience lands after a successful signup that doesn't require
+// email verification. Keep in sync with the (dashboard)/dashboard vs
+// (dashboard)/shop route split.
+const DEFAULT_SUCCESS_PATH: Record<SignUpAudience, string> = {
+  user: "/dashboard",
+  shop: "/shop/dashboard",
+};
+
+// Signup submits to a single endpoint with the audience in the payload,
+// since account creation logic (hashing, uniqueness checks) is shared —
+// only the resulting role differs. Adjust here if shop signup ever needs
+// its own endpoint (e.g. to also collect verification documents).
+const SIGNUP_ENDPOINT = "/api/auth/signup";
+
+export function SignUpForm({ audience = "user", signInPath, successPath }: SignUpFormProps) {
   const router = useRouter();
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+
+  const copy = AUDIENCE_COPY[audience];
+  const resolvedSignInPath = signInPath ?? `/auth/${audience}/sign-in`;
+  const resolvedSuccessPath = successPath ?? DEFAULT_SUCCESS_PATH[audience];
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -24,7 +66,7 @@ export function SignUpForm() {
     const agree = data.get("agree");
 
     const next: Record<string, string> = {};
-    if (!fullName.trim()) next.fullName = "Please enter your full name.";
+    if (!fullName.trim()) next.fullName = audience === "shop" ? "Please enter your business name." : "Please enter your full name.";
     if (!/^\S+@\S+\.\S+$/.test(email)) next.email = "Please enter a valid email.";
     if (password.length < 8) next.password = "Password must be at least 8 characters.";
     if (confirm !== password) next.confirmPassword = "Passwords do not match.";
@@ -34,10 +76,16 @@ export function SignUpForm() {
     if (Object.keys(next).length > 0) return;
 
     setLoading(true);
-    const response = await fetch("/api/auth/signup", {
+    const response = await fetch(SIGNUP_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullName, email, phone: String(data.get("phone") || "") || null, password }),
+      body: JSON.stringify({
+        fullName,
+        email,
+        phone: String(data.get("phone") || "") || null,
+        password,
+        role: audience === "shop" ? "SHOP" : "USER",
+      }),
     });
     const result = await response.json().catch(() => ({}));
     setLoading(false);
@@ -46,22 +94,22 @@ export function SignUpForm() {
       return;
     }
     if (result.requiresEmailVerification) {
-      router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+      router.push(`/auth/${audience}/verify-email?email=${encodeURIComponent(email)}`);
     } else {
-      router.push("/dashboard");
+      router.push(resolvedSuccessPath);
     }
   };
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ink">Create your PhoneBay account</h1>
-      <p className="text-sm text-ink-soft mt-1.5">Buy, sell, and verify with confidence.</p>
+      <h1 className="text-2xl font-semibold text-ink">{copy.title}</h1>
+      <p className="text-sm text-ink-soft mt-1.5">{copy.subtitle}</p>
 
       <form onSubmit={handleSubmit} noValidate className="mt-7 flex flex-col gap-4">
         {errors.form && <p className="text-sm text-danger bg-danger-tint rounded-(--pb-radius-sm) px-3.5 py-2.5">{errors.form}</p>}
         <div>
           <Label htmlFor="fullName" required>
-            Full Name
+            {copy.namePlaceholder}
           </Label>
           <Input id="fullName" name="fullName" leadingIcon={<User className="h-4 w-4" />} error={!!errors.fullName} />
           {errors.fullName && <p className="mt-1.5 text-[13px] text-danger">{errors.fullName}</p>}
@@ -128,7 +176,7 @@ export function SignUpForm() {
           {errors.agree && <p className="mt-1.5 text-[13px] text-danger">{errors.agree}</p>}
         </div>
         <Button type="submit" fullWidth loading={loading}>
-          Create Account
+          {audience === "shop" ? "Register Shop" : "Create Account"}
         </Button>
       </form>
 
@@ -137,7 +185,7 @@ export function SignUpForm() {
 
       <p className="text-center text-sm text-ink-soft mt-6">
         Already have an account?{" "}
-        <Link href="/auth/signin" className="font-medium text-brand">
+        <Link href={resolvedSignInPath} className="font-medium text-brand">
           Sign in
         </Link>
       </p>

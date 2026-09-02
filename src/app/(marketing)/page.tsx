@@ -412,7 +412,7 @@ export default function HomePage() {
                 </Link>
 
                 <Link
-                  href="/shops"
+                  href="/marketplace"
                   className="
                     inline-flex h-11 items-center gap-2 rounded-xl
                     border border-black/[0.07] bg-white
@@ -479,7 +479,7 @@ export default function HomePage() {
 
               <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link
-                  href="/dashboard/listings/create"
+                  href="/dashboard/listings/new"
                   className="
                     inline-flex h-12 items-center justify-center gap-2
                     rounded-xl px-5 text-sm font-semibold text-white
