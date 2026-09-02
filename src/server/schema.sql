@@ -3,29 +3,39 @@
 -- Written as idempotent DDL so it's safe to run on every boot.
 
 CREATE TABLE IF NOT EXISTS users (
-  id             TEXT PRIMARY KEY,
-  email          TEXT NOT NULL UNIQUE,
-  password_hash  TEXT NOT NULL,
-  full_name      TEXT NOT NULL,
-  phone          TEXT,
-  avatar_url     TEXT,
-  bio            TEXT,
-  city           TEXT,
-  role           TEXT NOT NULL DEFAULT 'USER', -- USER | SHOP | ADMIN
-  email_verified INTEGER NOT NULL DEFAULT 0,
-  phone_verified INTEGER NOT NULL DEFAULT 0,
-  trust_score    REAL NOT NULL DEFAULT 7.5,
-  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  id                  TEXT PRIMARY KEY,
+  email               TEXT NOT NULL UNIQUE,
+  password_hash       TEXT NOT NULL,
+  full_name           TEXT NOT NULL,
+  phone               TEXT,
+  avatar_url          TEXT,
+  bio                 TEXT,
+  city                TEXT,
+  role                TEXT NOT NULL DEFAULT 'USER', -- USER | SHOP | ADMIN
+  shop_id             TEXT REFERENCES shop_profiles(id) ON DELETE SET NULL,
+  email_verified      INTEGER NOT NULL DEFAULT 0,
+  phone_verified      INTEGER NOT NULL DEFAULT 0,
+  trust_score         REAL NOT NULL DEFAULT 7.5,
+  is_blocked          INTEGER NOT NULL DEFAULT 0,
+  blocked_reason      TEXT,
+  blocked_at          TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS shop_profiles (
-  id         TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-  shop_name  TEXT NOT NULL,
-  verified   INTEGER NOT NULL DEFAULT 0,
-  services   TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  id                    TEXT PRIMARY KEY,
+  shop_name             TEXT NOT NULL,
+  shop_email            TEXT NOT NULL UNIQUE,
+  verified              INTEGER NOT NULL DEFAULT 0,
+  verification_status   TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  services              TEXT NOT NULL DEFAULT '',
+  verification_notes    TEXT,
+  verified_at           TEXT,
+  verified_by_admin_id  TEXT REFERENCES users(id) ON DELETE SET NULL,
+  is_active             INTEGER NOT NULL DEFAULT 1,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS listings (
@@ -55,6 +65,8 @@ CREATE TABLE IF NOT EXISTS listings (
 
 CREATE INDEX IF NOT EXISTS idx_listings_seller ON listings(seller_id);
 CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_shop_id ON users(shop_id);
 
 CREATE TABLE IF NOT EXISTS saved_listings (
   id         TEXT PRIMARY KEY,
@@ -137,3 +149,17 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_target ON reviews(target_seller_id);
+
+-- Admin audit log table
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id            TEXT PRIMARY KEY,
+  admin_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action        TEXT NOT NULL,
+  entity_type   TEXT NOT NULL,
+  entity_id     TEXT NOT NULL,
+  changes       TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_admin ON admin_audit_logs(admin_id);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON admin_audit_logs(entity_type, entity_id);

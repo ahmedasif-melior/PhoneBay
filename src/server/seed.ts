@@ -25,17 +25,21 @@ export function seedIfEmpty() {
   ];
 
   const insertUser = db.prepare(
-    `INSERT INTO users (id, email, password_hash, full_name, city, role, email_verified, phone_verified, trust_score)
-     VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?)`
+    `INSERT INTO users (id, email, password_hash, full_name, city, role, shop_id, email_verified, phone_verified, trust_score)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`
   );
   const insertShop = db.prepare(
-    `INSERT INTO shop_profiles (id, user_id, shop_name, verified, services) VALUES (?, ?, ?, 1, ?)`
+    `INSERT INTO shop_profiles (id, shop_name, shop_email, verified, verification_status, services)
+     VALUES (?, ?, ?, 1, 'approved', ?)`
   );
 
   for (const seller of sellers) {
-    insertUser.run(seller.id, seller.email, passwordHash, seller.fullName, seller.city, seller.role, 8.5 + Math.random());
     if (seller.role === "SHOP") {
-      insertShop.run(generateId("shp_"), seller.id, seller.shopName, "Device Testing,Certification,Repairs,Trade-In");
+      const shopId = generateId("shp_");
+      insertShop.run(shopId, seller.shopName, seller.email, "Device Testing,Certification,Repairs,Trade-In");
+      insertUser.run(seller.id, seller.email, passwordHash, seller.fullName, seller.city, seller.role, shopId, 8.5 + Math.random());
+    } else {
+      insertUser.run(seller.id, seller.email, passwordHash, seller.fullName, seller.city, seller.role, null, 8.5 + Math.random());
     }
   }
 

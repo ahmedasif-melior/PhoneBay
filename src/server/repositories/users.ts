@@ -11,10 +11,13 @@ interface UserRow {
   bio: string | null;
   city: string | null;
   role: Role;
-  account_purpose: string | null;
+  shop_id: string | null;
   email_verified: number;
   phone_verified: number;
   trust_score: number;
+  is_blocked: number;
+  blocked_reason: string | null;
+  blocked_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -30,10 +33,13 @@ function mapRow(row: UserRow): UserRecord {
     bio: row.bio,
     city: row.city,
     role: row.role,
-    accountPurpose: row.account_purpose as UserRecord["accountPurpose"],
+    shopId: row.shop_id,
     emailVerified: !!row.email_verified,
     phoneVerified: !!row.phone_verified,
     trustScore: row.trust_score,
+    isBlocked: !!row.is_blocked,
+    blockedReason: row.blocked_reason,
+    blockedAt: row.blocked_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -57,6 +63,16 @@ export const usersRepo = {
     return row ? mapRow(row) : null;
   },
 
+  findByRole(role: Role): UserRecord[] {
+    const rows = db.prepare("SELECT * FROM users WHERE role = ? ORDER BY created_at DESC").all(role) as UserRow[];
+    return rows.map(mapRow);
+  },
+
+  findByShopId(shopId: string): UserRecord[] {
+    const rows = db.prepare("SELECT * FROM users WHERE shop_id = ?").all(shopId) as UserRow[];
+    return rows.map(mapRow);
+  },
+
   create(input: {
     email: string;
     passwordHash: string;
@@ -64,11 +80,11 @@ export const usersRepo = {
     phone?: string | null;
     city?: string | null;
     role?: Role;
-    accountPurpose?: UserRecord["accountPurpose"];
+    shopId?: string | null;
   }): UserRecord {
     const id = generateId("usr_");
     db.prepare(
-      `INSERT INTO users (id, email, password_hash, full_name, phone, city, role, account_purpose)
+      `INSERT INTO users (id, email, password_hash, full_name, phone, city, role, shop_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
@@ -78,7 +94,7 @@ export const usersRepo = {
       input.phone ?? null,
       input.city ?? null,
       input.role ?? "USER",
-      input.accountPurpose ?? null
+      input.shopId ?? null
     );
     return this.findById(id)!;
   },
@@ -91,9 +107,12 @@ export const usersRepo = {
       city: string | null;
       bio: string | null;
       avatarUrl: string | null;
-      accountPurpose: UserRecord["accountPurpose"];
+      shopId: string | null;
       emailVerified: boolean;
       phoneVerified: boolean;
+      trustScore: number;
+      isBlocked: boolean;
+      blockedReason: string | null;
     }>
   ): UserRecord | null {
     const columnMap: Record<string, string> = {
@@ -102,9 +121,12 @@ export const usersRepo = {
       city: "city",
       bio: "bio",
       avatarUrl: "avatar_url",
-      accountPurpose: "account_purpose",
+      shopId: "shop_id",
       emailVerified: "email_verified",
       phoneVerified: "phone_verified",
+      trustScore: "trust_score",
+      isBlocked: "is_blocked",
+      blockedReason: "blocked_reason",
     };
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -119,5 +141,17 @@ export const usersRepo = {
     values.push(id);
     db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...(values as []));
     return this.findById(id);
+  },
+
+  blockUser(userId: string, reason: string): UserRecord | null {
+    db.prepare(`UPDATE users SET is_blocked = 1, blocked_reason = ?, blocked_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
+      .run(reason, userId);
+    return this.findById(userId);
+  },
+
+  unblockUser(userId: string): UserRecord | null {
+    db.prepare(`UPDATE users SET is_blocked = 0, blocked_reason = NULL, blocked_at = NULL, updated_at = datetime('now') WHERE id = ?`)
+      .run(userId);
+    return this.findById(userId);
   },
 };

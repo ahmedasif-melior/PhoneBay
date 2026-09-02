@@ -3,6 +3,7 @@ export type AccountPurpose = "buyer" | "seller" | "both" | "shop" | null;
 export type ListingStatus = "active" | "pending" | "sold" | "draft" | "paused";
 export type VerificationStatus = "pending" | "in_progress" | "completed";
 export type OrderStatus = "processing" | "shipped" | "delivered" | "cancelled";
+export type ShopVerificationStatus = "pending" | "approved" | "rejected";
 
 export interface UserRecord {
   id: string;
@@ -14,10 +15,28 @@ export interface UserRecord {
   bio: string | null;
   city: string | null;
   role: Role;
-  accountPurpose: AccountPurpose;
+  shopId: string | null;
   emailVerified: boolean;
   phoneVerified: boolean;
   trustScore: number;
+  isBlocked: boolean;
+  blockedReason: string | null;
+  blockedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShopProfileRecord {
+  id: string;
+  shopName: string;
+  shopEmail: string;
+  verified: boolean;
+  verificationStatus: ShopVerificationStatus;
+  services: string;
+  verificationNotes: string | null;
+  verifiedAt: string | null;
+  verifiedByAdminId: string | null;
+  isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -108,5 +127,15 @@ export interface ReviewRecord {
   listingId: string | null;
   rating: number;
   comment: string;
+  createdAt: string;
+}
+
+export interface AdminAuditLogRecord {
+  id: string;
+  adminId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  changes: Record<string, unknown> | null;
   createdAt: string;
 }

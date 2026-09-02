@@ -10,8 +10,7 @@ import { seedIfEmpty } from "@/server/seed";
 // The database file lives in /data/phonebay.db (gitignored). Schema is
 // applied idempotently from schema.sql on first import in a process.
 
-// const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_DIR = path.join("/tmp", "data");
+const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "phonebay.db");
 const SCHEMA_PATH = path.join(process.cwd(), "src", "server", "schema.sql");
 
