@@ -1,10 +1,15 @@
-import { db, generateId } from "@/server/db";
+import { getAdminDb, queryOne, queryRows } from "@/server/db";
 import type { PublicUser, Role, UserRecord } from "@/server/types";
 
-interface UserRow {
+/**
+ * UserRow represents a row from public.users.
+ *
+ * Authentication is managed entirely by Supabase Auth.
+ * public.users.id must always match auth.users.id.
+ */
+type UserRow = {
   id: string;
   email: string;
-  password_hash: string;
   full_name: string;
   phone: string | null;
   avatar_url: string | null;
@@ -12,94 +17,161 @@ interface UserRow {
   city: string | null;
   role: Role;
   shop_id: string | null;
-  email_verified: number;
-  phone_verified: number;
+  email_verified: boolean;
+  phone_verified: boolean;
   trust_score: number;
-  is_blocked: number;
+  is_blocked: boolean;
   blocked_reason: string | null;
   blocked_at: string | null;
   created_at: string;
   updated_at: string;
-}
+};
 
-function mapRow(row: UserRow): UserRecord {
-  return {
-    id: row.id,
-    email: row.email,
-    passwordHash: row.password_hash,
-    fullName: row.full_name,
-    phone: row.phone,
-    avatarUrl: row.avatar_url,
-    bio: row.bio,
-    city: row.city,
-    role: row.role,
-    shopId: row.shop_id,
-    emailVerified: !!row.email_verified,
-    phoneVerified: !!row.phone_verified,
-    trustScore: row.trust_score,
-    isBlocked: !!row.is_blocked,
-    blockedReason: row.blocked_reason,
-    blockedAt: row.blocked_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
+const mapRow = (r: UserRow): UserRecord => ({
+  id: r.id,
+  email: r.email,
+  fullName: r.full_name,
+  phone: r.phone,
+  avatarUrl: r.avatar_url,
+  bio: r.bio,
+  city: r.city,
+  role: r.role,
+  shopId: r.shop_id,
+  emailVerified: r.email_verified,
+  phoneVerified: r.phone_verified,
+  trustScore: r.trust_score,
+  isBlocked: r.is_blocked,
+  blockedReason: r.blocked_reason,
+  blockedAt: r.blocked_at,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
 
 export function toPublicUser(user: UserRecord): PublicUser {
-  const { passwordHash: _passwordHash, ...rest } = user;
-  return rest;
+  return user;
 }
 
 export const usersRepo = {
-  findByEmail(email: string): UserRecord | null {
-    const row = db
-      .prepare("SELECT * FROM users WHERE email = ?")
-      .get(email.toLowerCase().trim()) as UserRow | undefined;
-    return row ? mapRow(row) : null;
+  /**
+   * Find a user profile by email.
+   *
+   * This is a trusted server-side repository operation, so it uses
+   * the server-only Supabase secret client.
+   */
+  async findByEmail(email: string) {
+    const db = getAdminDb();
+
+    const r = await queryOne<UserRow>(
+      db
+        .from("users")
+        .select("*")
+        .eq("email", email.toLowerCase().trim())
+        .maybeSingle(),
+    );
+
+    return r ? mapRow(r) : null;
   },
 
-  findById(id: string): UserRecord | null {
-    const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
-    return row ? mapRow(row) : null;
+  /**
+   * Find a public profile by the Supabase Auth UUID.
+   *
+   * IMPORTANT:
+   * This ID must be auth.users.id.
+   */
+  async findById(id: string) {
+    const db = getAdminDb();
+
+    const r = await queryOne<UserRow>(
+      db
+        .from("users")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r ? mapRow(r) : null;
   },
 
-  findByRole(role: Role): UserRecord[] {
-    const rows = db.prepare("SELECT * FROM users WHERE role = ? ORDER BY created_at DESC").all(role) as UserRow[];
+  /**
+   * Find all users with a particular role.
+   */
+  async findByRole(role: Role) {
+    const db = getAdminDb();
+
+    const rows = await queryRows<UserRow>(
+      db
+        .from("users")
+        .select("*")
+        .eq("role", role)
+        .order("created_at", { ascending: false }),
+    );
+
     return rows.map(mapRow);
   },
 
-  findByShopId(shopId: string): UserRecord[] {
-    const rows = db.prepare("SELECT * FROM users WHERE shop_id = ?").all(shopId) as UserRow[];
+  /**
+   * Find users belonging to a shop.
+   */
+  async findByShopId(shopId: string) {
+    const db = getAdminDb();
+
+    const rows = await queryRows<UserRow>(
+      db
+        .from("users")
+        .select("*")
+        .eq("shop_id", shopId),
+    );
+
     return rows.map(mapRow);
   },
 
-  create(input: {
+  /**
+   * Create a public.users profile.
+   *
+   * Normally this should NOT be called after sign-up because the
+   * database trigger on auth.users creates the profile automatically.
+   *
+   * This remains available for trusted server-side operations where
+   * an explicit profile creation is genuinely required.
+   */
+  async create(input: {
+    id: string;
     email: string;
-    passwordHash: string;
     fullName: string;
     phone?: string | null;
     city?: string | null;
     role?: Role;
     shopId?: string | null;
-  }): UserRecord {
-    const id = generateId("usr_");
-    db.prepare(
-      `INSERT INTO users (id, email, password_hash, full_name, phone, city, role, shop_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      input.email.toLowerCase().trim(),
-      input.passwordHash,
-      input.fullName.trim(),
-      input.phone ?? null,
-      input.city ?? null,
-      input.role ?? "USER",
-      input.shopId ?? null
+  }) {
+    const db = getAdminDb();
+
+    const r = await queryOne<UserRow>(
+      db
+        .from("users")
+        .insert({
+          id: input.id,
+          email: input.email.toLowerCase().trim(),
+          full_name: input.fullName.trim(),
+          phone: input.phone ?? null,
+          city: input.city ?? null,
+          role: input.role ?? "USER",
+          shop_id: input.shopId ?? null,
+        })
+        .select()
+        .single(),
     );
-    return this.findById(id)!;
+
+    if (!r) {
+      throw new Error("Failed to create user profile");
+    }
+
+    return mapRow(r);
   },
 
-  update(
+  /**
+   * Update a public.users profile.
+   */
+  async update(
     id: string,
     fields: Partial<{
       fullName: string;
@@ -113,8 +185,8 @@ export const usersRepo = {
       trustScore: number;
       isBlocked: boolean;
       blockedReason: string | null;
-    }>
-  ): UserRecord | null {
+    }>,
+  ) {
     const columnMap: Record<string, string> = {
       fullName: "full_name",
       phone: "phone",
@@ -128,30 +200,72 @@ export const usersRepo = {
       isBlocked: "is_blocked",
       blockedReason: "blocked_reason",
     };
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    for (const [key, value] of Object.entries(fields)) {
-      const column = columnMap[key];
-      if (!column) continue;
-      sets.push(`${column} = ?`);
-      values.push(typeof value === "boolean" ? (value ? 1 : 0) : value);
+
+    const payload = Object.fromEntries(
+      Object.entries(fields).flatMap(([key, value]) =>
+        columnMap[key] ? [[columnMap[key], value]] : [],
+      ),
+    );
+
+    if (!Object.keys(payload).length) {
+      return this.findById(id);
     }
-    if (sets.length === 0) return this.findById(id);
-    sets.push("updated_at = datetime('now')");
-    values.push(id);
-    db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`).run(...(values as []));
-    return this.findById(id);
+
+    const db = getAdminDb();
+
+    const r = await queryOne<UserRow>(
+      db
+        .from("users")
+        .update(payload)
+        .eq("id", id)
+        .select()
+        .maybeSingle(),
+    );
+
+    return r ? mapRow(r) : null;
   },
 
-  blockUser(userId: string, reason: string): UserRecord | null {
-    db.prepare(`UPDATE users SET is_blocked = 1, blocked_reason = ?, blocked_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
-      .run(reason, userId);
-    return this.findById(userId);
+  /**
+   * Block a user.
+   */
+  async blockUser(userId: string, reason: string) {
+    const db = getAdminDb();
+
+    const r = await queryOne<UserRow>(
+      db
+        .from("users")
+        .update({
+          is_blocked: true,
+          blocked_reason: reason,
+          blocked_at: new Date().toISOString(),
+        })
+        .eq("id", userId)
+        .select()
+        .maybeSingle(),
+    );
+
+    return r ? mapRow(r) : null;
   },
 
-  unblockUser(userId: string): UserRecord | null {
-    db.prepare(`UPDATE users SET is_blocked = 0, blocked_reason = NULL, blocked_at = NULL, updated_at = datetime('now') WHERE id = ?`)
-      .run(userId);
-    return this.findById(userId);
+  /**
+   * Unblock a user.
+   */
+  async unblockUser(userId: string) {
+    const db = getAdminDb();
+
+    const r = await queryOne<UserRow>(
+      db
+        .from("users")
+        .update({
+          is_blocked: false,
+          blocked_reason: null,
+          blocked_at: null,
+        })
+        .eq("id", userId)
+        .select()
+        .maybeSingle(),
+    );
+
+    return r ? mapRow(r) : null;
   },
 };

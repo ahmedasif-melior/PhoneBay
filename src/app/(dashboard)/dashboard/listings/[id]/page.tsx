@@ -1,37 +1,45 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import Link from "next/link";
-import { Eye } from "lucide-react";
-import { EditListingForm } from "@/components/dashboard/EditListingForm";
-import { getCurrentUser, isAdminRole } from "@/server/http";
+
+import { MyListingsBrowser } from "@/components/dashboard/MyListingsBrowser";
+import { getCurrentUser } from "@/server/http";
 import { listingsRepo } from "@/server/repositories/listings";
 
-export const metadata: Metadata = { title: "Edit Listing" };
+export const metadata: Metadata = {
+  title: "My Listings",
+};
 
-export default async function EditListingPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
+export default async function MyListingsPage() {
   const user = await getCurrentUser();
-  const listing = listingsRepo.findById(id);
-  if (!user || !listing || (listing.sellerId !== user.id && !isAdminRole(user.role))) notFound();
+
+  if (!user) {
+    return null;
+  }
+
+  const listings = await listingsRepo.list({
+    sellerId: user.id,
+    status: undefined,
+    sort: "newest",
+  });
 
   return (
-    <div className="max-w-2xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Edit listing</h1>
-          <p className="text-ink-soft mt-1">{listing.model} · {listing.storage}</p>
-        </div>
-        <Link href={`/marketplace/${listing.id}`} className="text-sm font-medium text-brand flex items-center gap-1.5">
-          <Eye className="h-4 w-4" /> Preview
-        </Link>
+    <div className="max-w-6xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-ink">
+          My Listings
+        </h1>
+
+        <p className="mt-1 text-ink-soft">
+          Manage your phone listings and track their status.
+        </p>
       </div>
-      <div className="mt-7">
-        <EditListingForm listing={listing} />
-      </div>
+
+      <MyListingsBrowser
+        initialListings={
+          Array.isArray(listings)
+            ? listings
+            : []
+        }
+      />
     </div>
   );
 }

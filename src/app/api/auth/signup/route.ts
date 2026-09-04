@@ -1,81 +1,208 @@
 import { NextRequest } from "next/server";
+
 import { jsonError, jsonOk } from "@/server/http";
 import { signUpSchema } from "@/server/validation";
 import { usersRepo, toPublicUser } from "@/server/repositories/users";
 import { shopsRepo } from "@/server/repositories/shops";
-import { hashPassword, createSessionToken, setSessionCookie } from "@/server/auth";
-import { getSupabase, getSupabaseRedirectUrl } from "@/server/supabase";
+import {
+  getSupabaseServer,
+  getSupabaseRedirectUrl,
+} from "@/server/supabase";
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null);
-  const parsed = signUpSchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError("Invalid sign up details.", 422, parsed.error.flatten());
-  }
+  try {
+    const body = await req.json().catch(() => null);
 
-  const { fullName, email, phone, password, accountPurpose } = parsed.data;
+    const parsed = signUpSchema.safeParse(body);
 
-  if (usersRepo.findByEmail(email)) {
-    return jsonError("An account with this email already exists.", 409);
-  }
-
-  const supabase = getSupabase();
-  if (supabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, phone: phone ?? null },
-        emailRedirectTo: getSupabaseRedirectUrl(req.url),
-      },
-    });
-    if (error || !data.user) return jsonError(error?.message ?? "Unable to create your account.", 400);
-
-    const user = usersRepo.create({
-      email,
-      passwordHash: await hashPassword(`supabase:${crypto.randomUUID()}`),
-      fullName,
-      phone,
-      role: accountPurpose === "shop" ? "SHOP" : "USER",
-    });
-
-    // If shop account, create shop profile
-    if (accountPurpose === "shop") {
-      const shopProfile = shopsRepo.create({
-        shopName: fullName,
-        shopEmail: email,
-      });
-      // Link user to shop
-      usersRepo.update(user.id, { shopId: shopProfile.id });
+    if (!parsed.success) {
+      return jsonError(
+        "Invalid sign up details.",
+        422,
+        parsed.error.flatten(),
+      );
     }
 
-    if (!data.session) return jsonOk({ user: toPublicUser(user), requiresEmailVerification: true }, 201);
-    const token = await createSessionToken({ sub: user.id, role: user.role, email: user.email });
-    await setSessionCookie(token);
-    return jsonOk({ user: toPublicUser(user) }, 201);
-  }
+    const {
+      fullName,
+      email,
+      phone,
+      password,
+      accountPurpose,
+    } = parsed.data;
 
-  const passwordHash = await hashPassword(password);
-  const user = usersRepo.create({
-    email,
-    passwordHash,
-    fullName,
-    phone,
-    role: accountPurpose === "shop" ? "SHOP" : "USER",
-  });
+    const normalizedEmail = email.trim().toLowerCase();
 
-  // If shop account, create shop profile
-  if (accountPurpose === "shop") {
-    const shopProfile = shopsRepo.create({
-      shopName: fullName,
-      shopEmail: email,
+    /*
+     * Check whether the application profile already exists.
+     */
+    const existingUser = await usersRepo.findByEmail(normalizedEmail);
+
+    if (existingUser) {
+      return jsonError(
+        "An account with this email already exists.",
+        409,
+      );
+    }
+
+    const supabase = await getSupabaseServer();
+
+    /*
+     * Supabase Auth is the source of truth for authentication.
+     *
+     * The database trigger:
+     *
+     * auth.users INSERT
+     *        ↓
+     * public.handle_new_user()
+     *        ↓
+     * public.users INSERT
+     *
+     * creates the public profile automatically.
+     */
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          phone: phone ?? null,
+        },
+        emailRedirectTo: getSupabaseRedirectUrl(
+          `${accountPurpose === "shop" ? "shop" : "user"}/verify-email`,
+        ),
+      },
     });
-    // Link user to shop
-    usersRepo.update(user.id, { shopId: shopProfile.id });
+
+    if (error) {
+      console.error(
+        "[SIGNUP] Supabase Auth error:",
+        error.message,
+      );
+
+      return jsonError(
+        error.message || "Unable to create your account.",
+        400,
+      );
+    }
+
+    if (!data.user) {
+      console.error("[SIGNUP] Supabase returned no user.");
+
+      return jsonError(
+        "Unable to create your account.",
+        500,
+      );
+    }
+
+    console.log("[SIGNUP] Auth user created:", data.user.id);
+
+    /*
+     * The Auth trigger should have created public.users.
+     *
+     * Fetch the profile rather than inserting it a second time.
+     */
+    let user = await usersRepo.findById(data.user.id);
+
+    /*
+     * In case the trigger/profile creation is not immediately
+     * visible, perform a small number of retries.
+     */
+    if (!user) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, 200 * attempt),
+        );
+
+        user = await usersRepo.findById(data.user.id);
+
+        if (user) {
+          break;
+        }
+      }
+    }
+
+    /*
+     * If the trigger did not create the profile, don't create
+     * a second Auth user or pretend signup succeeded.
+     */
+    if (!user) {
+      console.error(
+        "[SIGNUP] Auth user exists but public.users profile is missing:",
+        data.user.id,
+      );
+
+      /*
+       * Clean up the Auth user because signup did not complete
+       * successfully at the application level.
+       */
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Ignore cleanup failure.
+      }
+
+      return jsonError(
+        "Your account was created in authentication, but your profile could not be created. Please try again.",
+        500,
+      );
+    }
+
+    /*
+     * Update profile fields that depend on the requested
+     * account purpose.
+     *
+     * The Auth trigger creates the profile with role USER.
+     * For a shop signup, change it to SHOP.
+     */
+    if (accountPurpose === "shop") {
+      user = await usersRepo.update(user.id, {
+        role: "SHOP",
+      });
+
+      /*
+       * Create the shop profile.
+       */
+      const shopProfile = await shopsRepo.create({
+        shopName: fullName,
+        shopEmail: normalizedEmail,
+      });
+
+      /*
+       * Link the public user profile to the shop.
+       */
+      user = await usersRepo.update(user.id, {
+        shopId: shopProfile.id,
+      });
+    }
+
+    const requiresEmailVerification = !data.session;
+
+    console.log("[SIGNUP] Signup completed:", {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      requiresEmailVerification,
+    });
+
+    return jsonOk(
+      {
+        user: toPublicUser(user),
+        requiresEmailVerification,
+      },
+      201,
+    );
+  } catch (error) {
+    console.error("[SIGNUP] Fatal error:", error);
+
+    if (error instanceof Error) {
+      console.error("[SIGNUP] Message:", error.message);
+      console.error("[SIGNUP] Stack:", error.stack);
+    }
+
+    return jsonError(
+      "Unable to create your account. Please try again.",
+      500,
+    );
   }
-
-  const token = await createSessionToken({ sub: user.id, role: user.role, email: user.email });
-  await setSessionCookie(token);
-
-  return jsonOk({ user: toPublicUser(user) }, 201);
 }

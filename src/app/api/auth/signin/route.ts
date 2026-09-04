@@ -1,62 +1,108 @@
 import { NextRequest } from "next/server";
+
 import { jsonError, jsonOk } from "@/server/http";
 import { signInSchema } from "@/server/validation";
-import { usersRepo, toPublicUser } from "@/server/repositories/users";
-import { verifyPassword, hashPassword, createSessionToken, setSessionCookie } from "@/server/auth";
-import { getSupabase } from "@/server/supabase";
+import {
+  usersRepo,
+  toPublicUser,
+} from "@/server/repositories/users";
+import { getSupabaseServer } from "@/server/supabase";
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null);
-  const parsed = signInSchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError("Invalid sign in details.", 422, parsed.error.flatten());
-  }
+  try {
+    const body = await req.json().catch(() => null);
 
-  const { email, password } = parsed.data;
-  const normalizedEmail = email.trim().toLowerCase();
-  const adminEmail = (process.env.ADMIN_EMAIL ?? "ahmed.asif@devsatmelior.com").trim().toLowerCase();
-  const adminPassword = process.env.ADMIN_PASSWORD ?? "PhoneBayAdmin!2026";
+    const parsed = signInSchema.safeParse(body);
 
-  if (normalizedEmail === adminEmail && password === adminPassword) {
-    let adminUser = usersRepo.findByEmail(adminEmail);
-    if (!adminUser) {
-      adminUser = usersRepo.create({
-        email: adminEmail,
-        passwordHash: await hashPassword(adminPassword),
-        fullName: "PhoneBay Admin",
-        role: "ADMIN",
-        accountPurpose: "both",
-      });
-    } else if (adminUser.role !== "ADMIN") {
-      adminUser = usersRepo.update(adminUser.id, {
-        fullName: "PhoneBay Admin",
-        accountPurpose: "both",
-      }) ?? adminUser;
+    if (!parsed.success) {
+      return jsonError(
+        "Invalid sign in details.",
+        422,
+        parsed.error.flatten(),
+      );
     }
 
-    const token = await createSessionToken({ sub: adminUser.id, role: "ADMIN", email: adminUser.email });
-    await setSessionCookie(token);
-    return jsonOk({ user: toPublicUser(adminUser) });
-  }
+    const { email, password } = parsed.data;
+    const normalizedEmail = email.trim().toLowerCase();
 
-  const supabase = getSupabase();
-  let user = usersRepo.findByEmail(normalizedEmail);
-  if (supabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
-    if (error || !data.user) return jsonError("Incorrect email or password.", 401);
-    if (!user) {
-      user = usersRepo.create({
+    const supabase = await getSupabaseServer();
+
+    /*
+     * Authenticate with Supabase Auth.
+     *
+     * signInWithPassword() also establishes the SSR session,
+     * and @supabase/ssr writes the session cookies through
+     * the cookies adapter above.
+     */
+    const { data, error } =
+      await supabase.auth.signInWithPassword({
         email: normalizedEmail,
-        fullName: data.user.user_metadata?.full_name ?? data.user.user_metadata?.name ?? normalizedEmail.split("@")[0],
-        passwordHash: await hashPassword(`supabase:${crypto.randomUUID()}`),
+        password,
       });
+
+    if (error || !data.user) {
+      console.error(
+        "Supabase sign-in failed:",
+        error?.message,
+      );
+
+      return jsonError(
+        "Incorrect email or password.",
+        401,
+      );
     }
-  } else if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    return jsonError("Incorrect email or password.", 401);
+
+    /*
+     * IMPORTANT:
+     * public.users.id must equal auth.users.id.
+     *
+     * We never create the profile during sign-in.
+     * The database trigger creates it when the Auth user
+     * is originally created.
+     */
+    const user = await usersRepo.findById(data.user.id);
+
+    if (!user) {
+      console.error(
+        "PUBLIC USER PROFILE NOT FOUND FOR AUTH USER:",
+        data.user.id,
+      );
+
+      await supabase.auth.signOut();
+
+      return jsonError(
+        "Your account profile could not be found. Please contact support.",
+        500,
+      );
+    }
+
+    /*
+     * Blocked users cannot continue.
+     */
+    if (user.isBlocked) {
+      await supabase.auth.signOut();
+
+      return jsonError(
+        "Your account is blocked.",
+        403,
+      );
+    }
+
+    /*
+     * Return the authenticated application user.
+     *
+     * The actual Supabase Auth session is stored in the
+     * SSR cookies by @supabase/ssr.
+     */
+    return jsonOk({
+      user: toPublicUser(user),
+    });
+  } catch (error) {
+    console.error("Sign-in route error:", error);
+
+    return jsonError(
+      "Unable to sign in. Please try again.",
+      500,
+    );
   }
-
-  const token = await createSessionToken({ sub: user.id, role: user.role, email: user.email });
-  await setSessionCookie(token);
-
-  return jsonOk({ user: toPublicUser(user) });
 }

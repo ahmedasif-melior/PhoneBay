@@ -1,109 +1,175 @@
-import { db, generateId } from "@/server/db";
-import type { ConversationRecord, MessageRecord } from "@/server/types";
+import {
+  generateId,
+  getDb,
+  queryOne,
+  queryRows,
+} from "@/server/db";
+import type {
+  ConversationRecord,
+  MessageRecord,
+} from "@/server/types";
 
-interface ConversationRow {
+type C = {
   id: string;
   listing_id: string | null;
   buyer_id: string;
   seller_id: string;
   created_at: string;
   updated_at: string;
-}
+};
 
-function mapConversation(row: ConversationRow): ConversationRecord {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    buyerId: row.buyer_id,
-    sellerId: row.seller_id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-interface MessageRow {
+type M = {
   id: string;
   conversation_id: string;
   sender_id: string;
   text: string;
-  read: number;
+  read: boolean;
   created_at: string;
-}
+};
 
-function mapMessage(row: MessageRow): MessageRecord {
-  return {
-    id: row.id,
-    conversationId: row.conversation_id,
-    senderId: row.sender_id,
-    text: row.text,
-    read: !!row.read,
-    createdAt: row.created_at,
-  };
-}
+const mc = (r: C): ConversationRecord => ({
+  id: r.id,
+  listingId: r.listing_id,
+  buyerId: r.buyer_id,
+  sellerId: r.seller_id,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+const mm = (r: M): MessageRecord => ({
+  id: r.id,
+  conversationId: r.conversation_id,
+  senderId: r.sender_id,
+  text: r.text,
+  read: r.read,
+  createdAt: r.created_at,
+});
 
 export const conversationsRepo = {
-  findOrCreate(input: { listingId?: string | null; buyerId: string; sellerId: string }): ConversationRecord {
-    const existing = db
-      .prepare(
-        `SELECT * FROM conversations WHERE buyer_id = ? AND seller_id = ? AND
-         (listing_id = ? OR (listing_id IS NULL AND ? IS NULL))`
-      )
-      .get(input.buyerId, input.sellerId, input.listingId ?? null, input.listingId ?? null) as
-      | ConversationRow
-      | undefined;
-    if (existing) return mapConversation(existing);
+  async findOrCreate(i: {
+    listingId?: string | null;
+    buyerId: string;
+    sellerId: string;
+  }) {
+    let q = getDb()
+      .from("conversations")
+      .select("*")
+      .eq("buyer_id", i.buyerId)
+      .eq("seller_id", i.sellerId);
+
+    q = i.listingId
+      ? q.eq("listing_id", i.listingId)
+      : q.is("listing_id", null);
+
+    const found = await queryOne<C>(q.maybeSingle());
+
+    if (found) {
+      return mc(found);
+    }
 
     const id = generateId("cvo_");
-    db.prepare(
-      `INSERT INTO conversations (id, listing_id, buyer_id, seller_id) VALUES (?, ?, ?, ?)`
-    ).run(id, input.listingId ?? null, input.buyerId, input.sellerId);
-    return this.findById(id)!;
+
+    const r = await queryOne<C>(
+      getDb()
+        .from("conversations")
+        .insert({
+          id,
+          listing_id: i.listingId ?? null,
+          buyer_id: i.buyerId,
+          seller_id: i.sellerId,
+        })
+        .select()
+        .single(),
+    );
+
+    return mc(r!);
   },
 
-  findById(id: string): ConversationRecord | null {
-    const row = db.prepare("SELECT * FROM conversations WHERE id = ?").get(id) as
-      | ConversationRow
-      | undefined;
-    return row ? mapConversation(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<C>(
+      getDb()
+        .from("conversations")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && mc(r);
   },
 
-  listForUser(userId: string): ConversationRecord[] {
-    const rows = db
-      .prepare(
-        `SELECT * FROM conversations WHERE buyer_id = ? OR seller_id = ? ORDER BY updated_at DESC`
+  async listForUser(id: string) {
+    return (
+      await queryRows<C>(
+        getDb()
+          .from("conversations")
+          .select("*")
+          .or(`buyer_id.eq.${id},seller_id.eq.${id}`)
+          .order("updated_at", { ascending: false }),
       )
-      .all(userId, userId) as ConversationRow[];
-    return rows.map(mapConversation);
+    ).map(mc);
   },
 };
 
 export const messagesRepo = {
-  send(input: { conversationId: string; senderId: string; text: string }): MessageRecord {
+  async send(i: {
+    conversationId: string;
+    senderId: string;
+    text: string;
+  }) {
     const id = generateId("msg_");
-    db.prepare(
-      `INSERT INTO messages (id, conversation_id, sender_id, text) VALUES (?, ?, ?, ?)`
-    ).run(id, input.conversationId, input.senderId, input.text);
-    db.prepare("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?").run(
-      input.conversationId
+
+    const r = await queryOne<M>(
+      getDb()
+        .from("messages")
+        .insert({
+          id,
+          conversation_id: i.conversationId,
+          sender_id: i.senderId,
+          text: i.text,
+        })
+        .select()
+        .single(),
     );
-    return this.findById(id)!;
+
+    await getDb()
+      .from("conversations")
+      .update({
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", i.conversationId);
+
+    return mm(r!);
   },
 
-  findById(id: string): MessageRecord | null {
-    const row = db.prepare("SELECT * FROM messages WHERE id = ?").get(id) as MessageRow | undefined;
-    return row ? mapMessage(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<M>(
+      getDb()
+        .from("messages")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && mm(r);
   },
 
-  listByConversation(conversationId: string): MessageRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC")
-      .all(conversationId) as MessageRow[];
-    return rows.map(mapMessage);
+  async listByConversation(id: string) {
+    return (
+      await queryRows<M>(
+        getDb()
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", id)
+          .order("created_at"),
+      )
+    ).map(mm);
   },
 
-  markRead(conversationId: string, readerId: string): void {
-    db.prepare(
-      "UPDATE messages SET read = 1 WHERE conversation_id = ? AND sender_id != ?"
-    ).run(conversationId, readerId);
+  async markRead(conversationId: string, readerId: string) {
+    await getDb()
+      .from("messages")
+      .update({ read: true })
+      .eq("conversation_id", conversationId)
+      .neq("sender_id", readerId);
   },
 };

@@ -1,50 +1,96 @@
-import { db, generateId } from "@/server/db";
-import type { OrderRecord, OrderStatus } from "@/server/types";
+import {
+  generateId,
+  getDb,
+  queryOne,
+  queryRows,
+} from "@/server/db";
+import type {
+  OrderRecord,
+  OrderStatus,
+} from "@/server/types";
 
-interface OrderRow {
+type R = {
   id: string;
   listing_id: string;
   buyer_id: string;
   price: number;
   status: OrderStatus;
   created_at: string;
-}
+};
 
-function mapRow(row: OrderRow): OrderRecord {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    buyerId: row.buyer_id,
-    price: row.price,
-    status: row.status,
-    createdAt: row.created_at,
-  };
-}
+const map = (r: R): OrderRecord => ({
+  id: r.id,
+  listingId: r.listing_id,
+  buyerId: r.buyer_id,
+  price: r.price,
+  status: r.status,
+  createdAt: r.created_at,
+});
 
 export const ordersRepo = {
-  create(input: { listingId: string; buyerId: string; price: number }): OrderRecord {
+  async create(i: {
+    listingId: string;
+    buyerId: string;
+    price: number;
+  }) {
     const id = generateId("ord_");
-    db.prepare(
-      `INSERT INTO orders (id, listing_id, buyer_id, price, status) VALUES (?, ?, ?, ?, 'processing')`
-    ).run(id, input.listingId, input.buyerId, input.price);
-    db.prepare("UPDATE listings SET status = 'sold' WHERE id = ?").run(input.listingId);
-    return this.findById(id)!;
+
+    const r = await queryOne<R>(
+      getDb()
+        .from("orders")
+        .insert({
+          id,
+          listing_id: i.listingId,
+          buyer_id: i.buyerId,
+          price: i.price,
+          status: "processing",
+        })
+        .select()
+        .single(),
+    );
+
+    await getDb()
+      .from("listings")
+      .update({ status: "sold" })
+      .eq("id", i.listingId);
+
+    return map(r!);
   },
 
-  findById(id: string): OrderRecord | null {
-    const row = db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as OrderRow | undefined;
-    return row ? mapRow(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("orders")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 
-  listByBuyer(buyerId: string): OrderRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM orders WHERE buyer_id = ? ORDER BY created_at DESC")
-      .all(buyerId) as OrderRow[];
-    return rows.map(mapRow);
+  async listByBuyer(id: string) {
+    return (
+      await queryRows<R>(
+        getDb()
+          .from("orders")
+          .select("*")
+          .eq("buyer_id", id)
+          .order("created_at", { ascending: false }),
+      )
+    ).map(map);
   },
 
-  updateStatus(id: string, status: OrderStatus): OrderRecord | null {
-    db.prepare("UPDATE orders SET status = ? WHERE id = ?").run(status, id);
-    return this.findById(id);
+  async updateStatus(id: string, status: OrderStatus) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("orders")
+        .update({ status })
+        .eq("id", id)
+        .select()
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 };

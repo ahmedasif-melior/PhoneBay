@@ -22,6 +22,7 @@ declare module "node:sqlite" {
 
   export class DatabaseSync {
     constructor(location: string, options?: DatabaseSyncOptions);
+
     open(): void;
     close(): void;
     exec(sql: string): void;
@@ -31,6 +32,7 @@ declare module "node:sqlite" {
     enableLoadExtension(enabled: boolean): void;
     loadExtension(path: string): void;
     location(): string | null;
+
     isOpen: boolean;
     isTransaction: boolean;
   }
@@ -39,13 +41,16 @@ declare module "node:sqlite" {
     source?: string;
     target?: string;
     rate?: number;
-    progress?: (info: { totalPages: number; remainingPages: number }) => void;
+    progress?: (info: {
+      totalPages: number;
+      remainingPages: number;
+    }) => void;
   }
 
   export function backup(
     sourceDb: DatabaseSync,
     destination: string,
-    options?: BackupOptions
+    options?: BackupOptions,
   ): Promise<number>;
 
   export const constants: Record<string, number>;

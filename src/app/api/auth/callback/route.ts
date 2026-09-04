@@ -1,31 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hashPassword, createSessionToken, setSessionCookie } from "@/server/auth";
 import { usersRepo } from "@/server/repositories/users";
-import { getSupabase } from "@/server/supabase";
+import { getSupabaseServer } from "@/server/supabase";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
-  const supabase = getSupabase();
-  if (!code || !supabase) {
+
+  if (!code) {
     return NextResponse.redirect(new URL("/user/sign-in?error=oauth", request.url));
   }
 
+  const supabase = await getSupabaseServer();
+
+  // Exchange code for session
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   const email = data.user?.email;
-  if (error || !email) {
+  const userId = data.user?.id;
+
+  if (error || !email || !userId) {
     return NextResponse.redirect(new URL("/user/sign-in?error=oauth", request.url));
   }
 
-  let user = usersRepo.findByEmail(email);
+  // Check if user profile exists in public.users
+  let user = await usersRepo.findById(userId);
+
   if (!user) {
-    user = usersRepo.create({
+    // Create user profile using UUID from auth.users
+    user = await usersRepo.create({
+      id: userId,
       email,
-      fullName: data.user.user_metadata?.full_name ?? data.user.user_metadata?.name ?? email.split("@")[0],
-      passwordHash: await hashPassword(`oauth:${crypto.randomUUID()}`),
+      fullName:
+        data.user.user_metadata?.full_name ??
+        data.user.user_metadata?.name ??
+        email.split("@")[0],
     });
   }
 
-  const token = await createSessionToken({ sub: user.id, role: user.role, email: user.email });
-  await setSessionCookie(token);
-  return NextResponse.redirect(new URL("/dashboard", request.url));
+  // Redirect to appropriate dashboard based on role
+  const redirectPath =
+    user.role === "ADMIN"
+      ? "/dashboard/admin"
+      : user.role === "SHOP"
+        ? "/shop/dashboard"
+        : "/dashboard";
+
+  return NextResponse.redirect(new URL(redirectPath, request.url));
 }

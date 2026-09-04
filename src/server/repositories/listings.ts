@@ -1,7 +1,7 @@
-import { db, generateId } from "@/server/db";
+import { generateId, getDb, queryOne, queryRows } from "@/server/db";
 import type { ListingRecord, ListingStatus } from "@/server/types";
 
-interface ListingRow {
+type Row = {
   id: string;
   seller_id: string;
   brand: string;
@@ -10,7 +10,7 @@ interface ListingRow {
   color: string | null;
   condition: string;
   price: number;
-  negotiable: number;
+  negotiable: boolean;
   city: string;
   area: string | null;
   description: string | null;
@@ -18,40 +18,38 @@ interface ListingRow {
   battery_health: number | null;
   repair_history: string | null;
   photo_count: number;
-  image_urls: string;
-  verified: number;
+  image_urls: string[];
+  verified: boolean;
   score: number | null;
   views: number;
   created_at: string;
   updated_at: string;
-}
+};
 
-function mapRow(row: ListingRow): ListingRecord {
-  return {
-    id: row.id,
-    sellerId: row.seller_id,
-    brand: row.brand,
-    model: row.model,
-    storage: row.storage,
-    color: row.color,
-    condition: row.condition,
-    price: row.price,
-    negotiable: !!row.negotiable,
-    city: row.city,
-    area: row.area,
-    description: row.description,
-    status: row.status,
-    batteryHealth: row.battery_health,
-    repairHistory: row.repair_history,
-    photoCount: row.photo_count,
-    imageUrls: JSON.parse(row.image_urls || "[]"),
-    verified: !!row.verified,
-    score: row.score,
-    views: row.views,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
+const map = (r: Row): ListingRecord => ({
+  id: r.id,
+  sellerId: r.seller_id,
+  brand: r.brand,
+  model: r.model,
+  storage: r.storage,
+  color: r.color,
+  condition: r.condition,
+  price: r.price,
+  negotiable: r.negotiable,
+  city: r.city,
+  area: r.area,
+  description: r.description,
+  status: r.status,
+  batteryHealth: r.battery_health,
+  repairHistory: r.repair_history,
+  photoCount: r.photo_count,
+  imageUrls: r.image_urls ?? [],
+  verified: r.verified,
+  score: r.score,
+  views: r.views,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
 
 export interface ListingFilters {
   q?: string;
@@ -67,74 +65,75 @@ export interface ListingFilters {
 }
 
 export const listingsRepo = {
-  findById(id: string): ListingRecord | null {
-    const row = db.prepare("SELECT * FROM listings WHERE id = ?").get(id) as ListingRow | undefined;
-    return row ? mapRow(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<Row>(
+      getDb()
+        .from("listings")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 
-  list(filters: ListingFilters = {}): ListingRecord[] {
-    const clauses: string[] = [];
-    const params: unknown[] = [];
+  async list(f: ListingFilters = {}) {
+    let q = getDb().from("listings").select("*");
 
-    if (filters.sellerId) {
-      clauses.push("seller_id = ?");
-      params.push(filters.sellerId);
+    if (f.sellerId) {
+      q = q.eq("seller_id", f.sellerId);
     }
 
-    if (filters.status) {
-      const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-      clauses.push(`status IN (${statuses.map(() => "?").join(",")})`);
-      params.push(...statuses);
+    if (f.status) {
+      q = q.in(
+        "status",
+        Array.isArray(f.status) ? f.status : [f.status],
+      );
     }
 
-    if (filters.q) {
-      clauses.push("(brand LIKE ? OR model LIKE ?)");
-      params.push(`%${filters.q}%`, `%${filters.q}%`);
+    if (f.q) {
+      q = q.or(`brand.ilike.%${f.q}%,model.ilike.%${f.q}%`);
     }
 
-    if (filters.brands?.length) {
-      clauses.push(`brand IN (${filters.brands.map(() => "?").join(",")})`);
-      params.push(...filters.brands);
+    if (f.brands?.length) {
+      q = q.in("brand", f.brands);
     }
 
-    if (filters.conditions?.length) {
-      clauses.push(`condition IN (${filters.conditions.map(() => "?").join(",")})`);
-      params.push(...filters.conditions);
+    if (f.conditions?.length) {
+      q = q.in("condition", f.conditions);
     }
 
-    if (filters.cities?.length) {
-      clauses.push(`city IN (${filters.cities.map(() => "?").join(",")})`);
-      params.push(...filters.cities);
+    if (f.cities?.length) {
+      q = q.in("city", f.cities);
     }
 
-    if (filters.verifiedOnly) {
-      clauses.push("verified = 1");
+    if (f.verifiedOnly) {
+      q = q.eq("verified", true);
     }
 
-    if (typeof filters.minPrice === "number") {
-      clauses.push("price >= ?");
-      params.push(filters.minPrice);
+    if (f.minPrice !== undefined) {
+      q = q.gte("price", f.minPrice);
     }
 
-    if (typeof filters.maxPrice === "number") {
-      clauses.push("price <= ?");
-      params.push(filters.maxPrice);
+    if (f.maxPrice !== undefined) {
+      q = q.lte("price", f.maxPrice);
     }
 
-    let orderBy = "created_at DESC";
-    if (filters.sort === "price-asc") orderBy = "price ASC";
-    else if (filters.sort === "price-desc") orderBy = "price DESC";
-    else if (filters.sort === "newest") orderBy = "created_at DESC";
-    else if (filters.sort === "recommended") orderBy = "score DESC, created_at DESC";
+    q =
+      f.sort === "price-asc"
+        ? q.order("price")
+        : f.sort === "price-desc"
+          ? q.order("price", { ascending: false })
+          : f.sort === "recommended"
+            ? q
+                .order("score", { ascending: false })
+                .order("created_at", { ascending: false })
+            : q.order("created_at", { ascending: false });
 
-    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const rows = db
-      .prepare(`SELECT * FROM listings ${where} ORDER BY ${orderBy}`)
-      .all(...(params as [])) as ListingRow[];
-    return rows.map(mapRow);
+    return (await queryRows<Row>(q)).map(map);
   },
 
-  create(input: {
+  async create(i: {
     sellerId: string;
     brand: string;
     model: string;
@@ -151,36 +150,39 @@ export const listingsRepo = {
     photoCount?: number;
     imageUrls?: string[];
     status?: ListingStatus;
-  }): ListingRecord {
+  }) {
     const id = generateId("lst_");
-    db.prepare(
-      `INSERT INTO listings
-        (id, seller_id, brand, model, storage, color, condition, price, negotiable, city, area,
-        description, battery_health, repair_history, photo_count, image_urls, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      input.sellerId,
-      input.brand,
-      input.model,
-      input.storage,
-      input.color ?? null,
-      input.condition,
-      input.price,
-      input.negotiable ? 1 : 0,
-      input.city,
-      input.area ?? null,
-      input.description ?? null,
-      input.batteryHealth ?? null,
-      input.repairHistory ?? null,
-      input.photoCount ?? 0,
-      JSON.stringify(input.imageUrls ?? []),
-      input.status ?? "active"
+
+    const r = await queryOne<Row>(
+      getDb()
+        .from("listings")
+        .insert({
+          id,
+          seller_id: i.sellerId,
+          brand: i.brand,
+          model: i.model,
+          storage: i.storage,
+          color: i.color ?? null,
+          condition: i.condition,
+          price: i.price,
+          negotiable: i.negotiable,
+          city: i.city,
+          area: i.area ?? null,
+          description: i.description ?? null,
+          battery_health: i.batteryHealth ?? null,
+          repair_history: i.repairHistory ?? null,
+          photo_count: i.photoCount ?? 0,
+          image_urls: i.imageUrls ?? [],
+          status: i.status ?? "active",
+        })
+        .select()
+        .single(),
     );
-    return this.findById(id)!;
+
+    return map(r!);
   },
 
-  update(
+  async update(
     id: string,
     fields: Partial<{
       price: number;
@@ -190,14 +192,19 @@ export const listingsRepo = {
       status: ListingStatus;
       verified: boolean;
       score: number;
-    }>
-  ): ListingRecord | null {
-    const current = this.findById(id);
-    if (current?.status === "sold" && typeof fields.status === "string" && fields.status !== "sold") {
-      return current;
+    }>,
+  ) {
+    const c = await this.findById(id);
+
+    if (
+      c?.status === "sold" &&
+      fields.status &&
+      fields.status !== "sold"
+    ) {
+      return c;
     }
 
-    const columnMap: Record<string, string> = {
+    const m: Record<string, string> = {
       price: "price",
       negotiable: "negotiable",
       condition: "condition",
@@ -206,38 +213,67 @@ export const listingsRepo = {
       verified: "verified",
       score: "score",
     };
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    for (const [key, value] of Object.entries(fields)) {
-      const column = columnMap[key];
-      if (!column) continue;
-      if (current?.status === "sold" && key === "status") continue;
-      sets.push(`${column} = ?`);
-      values.push(typeof value === "boolean" ? (value ? 1 : 0) : value);
+
+    const p = Object.fromEntries(
+      Object.entries(fields).flatMap(([k, v]) =>
+        m[k] ? [[m[k], v]] : [],
+      ),
+    );
+
+    if (!Object.keys(p).length) {
+      return c;
     }
-    if (sets.length === 0) return this.findById(id);
-    sets.push("updated_at = datetime('now')");
-    values.push(id);
-    db.prepare(`UPDATE listings SET ${sets.join(", ")} WHERE id = ?`).run(...(values as []));
-    return this.findById(id);
+
+    const r = await queryOne<Row>(
+      getDb()
+        .from("listings")
+        .update(p)
+        .eq("id", id)
+        .select()
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 
-  delete(id: string): void {
-    db.prepare("DELETE FROM listings WHERE id = ?").run(id);
+  async delete(id: string) {
+    await queryOne(
+      getDb()
+        .from("listings")
+        .delete()
+        .eq("id", id)
+        .select()
+        .maybeSingle(),
+    );
   },
 
-  incrementViews(id: string): void {
-    db.prepare("UPDATE listings SET views = views + 1 WHERE id = ?").run(id);
-  },
+  async incrementViews(id: string) {
+    const current = await this.findById(id);
 
-  countBySeller(sellerId: string): { active: number; pending: number; sold: number; draft: number } {
-    const rows = db
-      .prepare("SELECT status, COUNT(*) as count FROM listings WHERE seller_id = ? GROUP BY status")
-      .all(sellerId) as { status: ListingStatus; count: number }[];
-    const result = { active: 0, pending: 0, sold: 0, draft: 0 };
-    for (const row of rows) {
-      if (row.status in result) result[row.status as keyof typeof result] = row.count;
+    if (current) {
+      await getDb()
+        .from("listings")
+        .update({ views: current.views + 1 })
+        .eq("id", id);
     }
-    return result;
+  },
+
+  async countBySeller(sellerId: string) {
+    const rows = await this.list({ sellerId });
+
+    const out = {
+      active: 0,
+      pending: 0,
+      sold: 0,
+      draft: 0,
+    };
+
+    for (const r of rows) {
+      if (r.status in out) {
+        out[r.status as keyof typeof out]++;
+      }
+    }
+
+    return out;
   },
 };

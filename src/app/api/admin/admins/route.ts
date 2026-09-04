@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { jsonError, jsonOk, requireAdmin, isAuthError } from "@/server/http";
 import { usersRepo, toPublicUser } from "@/server/repositories/users";
-import { hashPassword } from "@/server/auth";
 import { auditLogsRepo } from "@/server/repositories/audit-logs";
+import { getSupabaseServer } from "@/server/supabase";
 import { z } from "zod";
 
 const createAdminSchema = z.object({
@@ -16,7 +16,7 @@ export async function GET() {
     const { user: adminUser } = await requireAdmin();
 
     // Fetch all admin users
-    const admins = usersRepo.findByRole("ADMIN");
+    const admins = await usersRepo.findByRole("ADMIN");
 
     return jsonOk({
       admins: admins.map(toPublicUser),
@@ -39,22 +39,36 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, fullName, password } = parsed.data;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if email already exists
-    if (usersRepo.findByEmail(email)) {
+    // Check if email already exists in public.users
+    const existingUser = await usersRepo.findByEmail(normalizedEmail);
+    if (existingUser) {
       return jsonError("An account with this email already exists.", 409);
     }
 
-    // Create new admin
-    const passwordHash = await hashPassword(password);
-    const newAdmin = usersRepo.create({
-      email,
-      passwordHash,
+    const supabase = await getSupabaseServer();
+
+    // Create admin user in Supabase Auth
+    const { data, error } = await supabase.auth.admin.createUser({
+      email: normalizedEmail,
+      password,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (error || !data.user) {
+      return jsonError(error?.message ?? "Failed to create admin account.", 400);
+    }
+
+    // Create admin profile in public.users using the UUID from auth.users
+    const newAdmin = await usersRepo.create({
+      id: data.user.id,
+      email: normalizedEmail,
       fullName,
       role: "ADMIN",
     });
 
-    auditLogsRepo.log({
+    await auditLogsRepo.log({
       adminId: adminUser.id,
       action: "CREATE_ADMIN",
       entityType: "USER",
@@ -75,6 +89,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err) {
     if (isAuthError(err)) return jsonError(err.message, 401);
-    throw err;
+    console.error("Failed to create admin:", err);
+    return jsonError("Failed to create admin account.", 500);
   }
 }

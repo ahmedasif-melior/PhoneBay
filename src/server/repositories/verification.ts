@@ -1,8 +1,17 @@
-import { db, generateId } from "@/server/db";
+import {
+  generateId,
+  getDb,
+  queryOne,
+  queryRows,
+} from "@/server/db";
 import { listingsRepo } from "@/server/repositories/listings";
-import type { CertificateRecord, VerificationRequestRecord, VerificationStatus } from "@/server/types";
+import type {
+  CertificateRecord,
+  VerificationRequestRecord,
+  VerificationStatus,
+} from "@/server/types";
 
-interface VerificationRow {
+type V = {
   id: string;
   listing_id: string;
   technician_id: string | null;
@@ -10,23 +19,13 @@ interface VerificationRow {
   requested_at: string;
   completed_at: string | null;
   score: number | null;
-  test_results: string | null;
-}
+  test_results: {
+    label: string;
+    status: "pass" | "fail";
+  }[] | null;
+};
 
-function mapVerification(row: VerificationRow): VerificationRequestRecord {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    technicianId: row.technician_id,
-    status: row.status,
-    requestedAt: row.requested_at,
-    completedAt: row.completed_at,
-    score: row.score,
-    testResults: row.test_results ? JSON.parse(row.test_results) : null,
-  };
-}
-
-interface CertificateRow {
+type C = {
   id: string;
   listing_id: string;
   overall_score: number;
@@ -38,62 +37,89 @@ interface CertificateRow {
   tested_by: string;
   issued_at: string;
   valid_until: string;
-}
+};
 
-function mapCertificate(row: CertificateRow): CertificateRecord {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    overallScore: row.overall_score,
-    batteryHealth: row.battery_health,
-    display: row.display_score,
-    camera: row.camera_score,
-    performance: row.performance_score,
-    physicalCondition: row.physical_condition,
-    testedBy: row.tested_by,
-    issuedAt: row.issued_at,
-    validUntil: row.valid_until,
-  };
-}
+const mv = (r: V): VerificationRequestRecord => ({
+  id: r.id,
+  listingId: r.listing_id,
+  technicianId: r.technician_id,
+  status: r.status,
+  requestedAt: r.requested_at,
+  completedAt: r.completed_at,
+  score: r.score,
+  testResults: r.test_results,
+});
+
+const mc = (r: C): CertificateRecord => ({
+  id: r.id,
+  listingId: r.listing_id,
+  overallScore: r.overall_score,
+  batteryHealth: r.battery_health,
+  display: r.display_score,
+  camera: r.camera_score,
+  performance: r.performance_score,
+  physicalCondition: r.physical_condition,
+  testedBy: r.tested_by,
+  issuedAt: r.issued_at,
+  validUntil: r.valid_until,
+});
 
 export const verificationRepo = {
-  create(listingId: string): VerificationRequestRecord {
-    const id = generateId("vrf_");
-    db.prepare(
-      `INSERT INTO verification_requests (id, listing_id, status) VALUES (?, ?, 'pending')`
-    ).run(id, listingId);
-    return this.findById(id)!;
+  async create(listingId: string) {
+    const r = await queryOne<V>(
+      getDb()
+        .from("verification_requests")
+        .insert({
+          id: generateId("vrf_"),
+          listing_id: listingId,
+          status: "pending",
+        })
+        .select()
+        .single(),
+    );
+
+    return mv(r!);
   },
 
-  findById(id: string): VerificationRequestRecord | null {
-    const row = db.prepare("SELECT * FROM verification_requests WHERE id = ?").get(id) as
-      | VerificationRow
-      | undefined;
-    return row ? mapVerification(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<V>(
+      getDb()
+        .from("verification_requests")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && mv(r);
   },
 
-  listByListing(listingId: string): VerificationRequestRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM verification_requests WHERE listing_id = ? ORDER BY requested_at DESC")
-      .all(listingId) as VerificationRow[];
-    return rows.map(mapVerification);
+  async listByListing(id: string) {
+    return (
+      await queryRows<V>(
+        getDb()
+          .from("verification_requests")
+          .select("*")
+          .eq("listing_id", id)
+          .order("requested_at", { ascending: false }),
+      )
+    ).map(mv);
   },
 
-  listPending(): VerificationRequestRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM verification_requests WHERE status != 'completed' ORDER BY requested_at ASC")
-      .all() as VerificationRow[];
-    return rows.map(mapVerification);
+  async listPending() {
+    return (
+      await queryRows<V>(
+        getDb()
+          .from("verification_requests")
+          .select("*")
+          .neq("status", "completed")
+          .order("requested_at"),
+      )
+    ).map(mv);
   },
 
-  /**
-   * Completes a verification job: records the score/test results, marks the
-   * request completed, flags the listing as verified, and issues a
-   * certificate valid for 30 days — all in a single transaction.
-   */
-  complete(
+  async complete(
     id: string,
-    input: {
+    i: {
       technicianId: string;
       technicianName: string;
       score: number;
@@ -102,78 +128,113 @@ export const verificationRepo = {
       camera: number;
       performance: number;
       physicalCondition: number;
-      testResults: { label: string; status: "pass" | "fail" }[];
+      testResults: {
+        label: string;
+        status: "pass" | "fail";
+      }[];
+    },
+  ) {
+    const request = await this.findById(id);
+
+    if (!request) {
+      throw new Error("Verification request not found");
     }
-  ): { verification: VerificationRequestRecord; certificate: CertificateRecord } {
-    const request = this.findById(id);
-    if (!request) throw new Error("Verification request not found");
 
-    db.prepare(
-      `UPDATE verification_requests
-       SET status = 'completed', completed_at = datetime('now'), score = ?, test_results = ?, technician_id = ?
-       WHERE id = ?`
-    ).run(input.score, JSON.stringify(input.testResults), input.technicianId, id);
+    const v = await queryOne<V>(
+      getDb()
+        .from("verification_requests")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          score: i.score,
+          test_results: i.testResults,
+          technician_id: i.technicianId,
+        })
+        .eq("id", id)
+        .select()
+        .single(),
+    );
 
-    listingsRepo.update(request.listingId, { verified: true, score: input.score });
+    await listingsRepo.update(request.listingId, {
+      verified: true,
+      score: i.score,
+    });
 
-    const certId = generateId("crt_");
-    const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    db.prepare(
-      `INSERT INTO certificates
-        (id, listing_id, overall_score, battery_health, display_score, camera_score, performance_score, physical_condition, tested_by, valid_until)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(listing_id) DO UPDATE SET
-        overall_score = excluded.overall_score,
-        battery_health = excluded.battery_health,
-        display_score = excluded.display_score,
-        camera_score = excluded.camera_score,
-        performance_score = excluded.performance_score,
-        physical_condition = excluded.physical_condition,
-        tested_by = excluded.tested_by,
-        issued_at = datetime('now'),
-        valid_until = excluded.valid_until`
-    ).run(
-      certId,
-      request.listingId,
-      input.score,
-      input.batteryHealth,
-      input.display,
-      input.camera,
-      input.performance,
-      input.physicalCondition,
-      input.technicianName,
-      validUntil
+    const cert = await queryOne<C>(
+      getDb()
+        .from("certificates")
+        .upsert(
+          {
+            id: generateId("crt_"),
+            listing_id: request.listingId,
+            overall_score: i.score,
+            battery_health: i.batteryHealth,
+            display_score: i.display,
+            camera_score: i.camera,
+            performance_score: i.performance,
+            physical_condition: i.physicalCondition,
+            tested_by: i.technicianName,
+            valid_until: new Date(
+              Date.now() + 2592e6,
+            ).toISOString(),
+          },
+          { onConflict: "listing_id" },
+        )
+        .select()
+        .single(),
     );
 
     return {
-      verification: this.findById(id)!,
-      certificate: certificateRepo.findByListingId(request.listingId)!,
+      verification: mv(v!),
+      certificate: mc(cert!),
     };
   },
 };
 
 export const certificateRepo = {
-  findByListingId(listingId: string): CertificateRecord | null {
-    const row = db.prepare("SELECT * FROM certificates WHERE listing_id = ?").get(listingId) as
-      | CertificateRow
-      | undefined;
-    return row ? mapCertificate(row) : null;
+  async findByListingId(id: string) {
+    const r = await queryOne<C>(
+      getDb()
+        .from("certificates")
+        .select("*")
+        .eq("listing_id", id)
+        .maybeSingle(),
+    );
+
+    return r && mc(r);
   },
 
-  findById(id: string): CertificateRecord | null {
-    const row = db.prepare("SELECT * FROM certificates WHERE id = ?").get(id) as CertificateRow | undefined;
-    return row ? mapCertificate(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<C>(
+      getDb()
+        .from("certificates")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && mc(r);
   },
 
-  listBySeller(sellerId: string): CertificateRecord[] {
-    const rows = db
-      .prepare(
-        `SELECT c.* FROM certificates c
-         JOIN listings l ON l.id = c.listing_id
-         WHERE l.seller_id = ?
-         ORDER BY c.issued_at DESC`
+  async listBySeller(id: string) {
+    const listingIds = (
+      await listingsRepo.list({
+        sellerId: id,
+      })
+    ).map((x) => x.id);
+
+    if (!listingIds.length) {
+      return [];
+    }
+
+    return (
+      await queryRows<C>(
+        getDb()
+          .from("certificates")
+          .select("*")
+          .in("listing_id", listingIds)
+          .order("issued_at", { ascending: false }),
       )
-      .all(sellerId) as CertificateRow[];
-    return rows.map(mapCertificate);
+    ).map(mc);
   },
 };

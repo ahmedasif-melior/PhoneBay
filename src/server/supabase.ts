@@ -1,36 +1,51 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-function getConfig() {
-  return {
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    publishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  };
-}
+function getSupabaseConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-function isConfigured(value: string | undefined): value is string {
-  return Boolean(value && !value.includes("your-") && !value.includes("..."));
-}
-
-function isServiceRoleKey(value: string): boolean {
-  if (value.startsWith("sb_secret_")) return true;
-  const payload = value.split(".")[1];
-  if (!payload) return false;
-  try {
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payload.length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(normalized, "base64url").toString("utf8")).role === "service_role";
-  } catch {
-    return false;
+  if (!url || !key) {
+    throw new Error(
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
+    );
   }
+
+  return { url, key };
 }
 
-export function getSupabase(): SupabaseClient | null {
-  const { url, publishableKey: key } = getConfig();
-  if (!isConfigured(url) || !isConfigured(key)) return null;
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
+/**
+ * Creates the Supabase SSR client.
+ *
+ * Supabase Auth manages the session through cookies.
+ */
+export async function getSupabaseServer() {
+  const cookieStore = await cookies();
+  const { url, key } = getSupabaseConfig();
+
+  return createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options);
+        });
+      },
+    },
   });
 }
 
-export function getSupabaseRedirectUrl(requestUrl: string): string {
-  return process.env.SUPABASE_REDIRECT_URL ?? new URL("/api/auth/callback", requestUrl).toString();
+/**
+ * Returns the URL Supabase should redirect to after authentication.
+ */
+export function getSupabaseRedirectUrl(path = "/") {
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
+
+  return new URL(path, siteUrl).toString();
 }

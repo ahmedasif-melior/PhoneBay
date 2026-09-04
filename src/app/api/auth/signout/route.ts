@@ -1,7 +1,12 @@
-import { jsonOk } from "@/server/http";
-import { clearSessionCookie } from "@/server/auth";
+import { jsonOk, jsonError } from "@/server/http";
+import { signOut } from "@/server/auth";
 
 export async function POST() {
-  await clearSessionCookie();
-  return jsonOk({ success: true });
+  try {
+    await signOut();
+    return jsonOk({ success: true });
+  } catch (err) {
+    console.error("Sign out error:", err);
+    return jsonError("Failed to sign out.", 500);
+  }
 }

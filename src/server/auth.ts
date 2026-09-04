@@ -1,77 +1,50 @@
-import bcrypt from "bcryptjs";
-import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
-import type { Role } from "@/server/types";
+import { getSupabaseServer } from "@/server/supabase";
 
-const SESSION_COOKIE = "pb_session";
-const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 14; // 14 days
-
-function getSecretKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET is not set. Add it to your .env file.");
-  }
-  return new TextEncoder().encode(secret);
-}
-
+/**
+ * Represents the authenticated Supabase Auth user.
+ */
 export interface SessionPayload {
-  sub: string; // user id
-  role: Role;
+  userId: string;
   email: string;
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
-
-export async function createSessionToken(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ role: payload.role, email: payload.email })
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(payload.sub)
-    .setIssuedAt()
-    .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
-    .sign(getSecretKey());
-}
-
-export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
+/**
+ * Gets the current authenticated Supabase Auth user.
+ *
+ * Uses getUser() so the server validates the current Auth user
+ * instead of trusting a potentially stale session object.
+ */
+export async function getSession(): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecretKey());
+    const supabase = await getSupabaseServer();
+
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return null;
+    }
+
     return {
-      sub: payload.sub as string,
-      role: payload.role as Role,
-      email: payload.email as string,
+      userId: user.id,
+      email: user.email || "",
     };
-  } catch {
+  } catch (error) {
+    console.error("[AUTH] getSession failed:", error);
     return null;
   }
 }
 
-/** Sets the session cookie on the response (server actions / route handlers). */
-export async function setSessionCookie(token: string) {
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_DURATION_SECONDS,
-  });
+/**
+ * Signs out of Supabase Auth.
+ */
+export async function signOut(): Promise<void> {
+  try {
+    const supabase = await getSupabaseServer();
+    await supabase.auth.signOut();
+  } catch (error) {
+    console.error("[AUTH] signOut failed:", error);
+  }
 }
-
-export async function clearSessionCookie() {
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
-}
-
-export async function getSessionFromCookies(): Promise<SessionPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  return verifySessionToken(token);
-}
-
-export { SESSION_COOKIE };

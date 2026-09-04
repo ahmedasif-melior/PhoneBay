@@ -1,66 +1,127 @@
-import { DatabaseSync } from "node:sqlite";
-import fs from "node:fs";
-import path from "node:path";
-import { seedIfEmpty } from "@/server/seed";
-// A small, dependency-free persistence layer built on Node's built-in
-// SQLite driver (node:sqlite, stable since Node 22). No native bindings,
-// no external binary downloads — works identically in dev, CI, and
-// production containers.
-//
-// The database file lives in /data/phonebay.db (gitignored). Schema is
-// applied idempotently from schema.sql on first import in a process.
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "phonebay.db");
-const SCHEMA_PATH = path.join(process.cwd(), "src", "server", "schema.sql");
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __phonebayDb: DatabaseSync | undefined;
+function configured(value: string | undefined): value is string {
+  return Boolean(
+    value &&
+      !value.includes("your-") &&
+      !value.includes("..."),
+  );
 }
 
-function createConnection(): DatabaseSync {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+function getSupabaseConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  const database = new DatabaseSync(DB_PATH);
-  database.exec("PRAGMA busy_timeout = 5000;");
-  database.exec("PRAGMA foreign_keys = ON;");
-  database.exec("PRAGMA journal_mode = WAL;");
-
-  const schema = fs.readFileSync(SCHEMA_PATH, "utf-8");
-  database.exec(schema);
-  try {
-    database.exec("ALTER TABLE listings ADD COLUMN image_urls TEXT NOT NULL DEFAULT '[]';");
-  } catch {
-    // The column already exists in databases created after this migration.
+  if (!configured(url) || !configured(key)) {
+    throw new Error(
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
+    );
   }
 
-  try {
-    database.exec("ALTER TABLE users ADD COLUMN account_purpose TEXT;");
-  } catch {
-    // The column already exists in databases created after this migration.
+  return { url, key };
+}
+
+/**
+ * Public Supabase client.
+ *
+ * Uses the publishable key and therefore respects RLS.
+ */
+export function getDb(): SupabaseClient {
+  const { url, key } = getSupabaseConfig();
+
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+/**
+ * Backwards-compatible database export.
+ *
+ * Existing application code imports:
+ *
+ *   import { db } from "@/server/db";
+ *
+ * Keep this export while the application is being migrated.
+ *
+ * IMPORTANT:
+ * This client uses the public/publishable key and is subject to RLS.
+ * Do not use it for trusted admin/server operations.
+ */
+export const db = getDb();
+
+/**
+ * Server-only Supabase client.
+ *
+ * Uses SUPABASE_SECRET_KEY and bypasses RLS.
+ *
+ * NEVER expose this client or the secret key to browser/client code.
+ */
+export function getAdminDb(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+
+  if (!configured(url)) {
+    throw new Error(
+      "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL.",
+    );
   }
 
-  return database;
+  if (!configured(secretKey)) {
+    throw new Error(
+      "Supabase server secret is not configured. Set SUPABASE_SECRET_KEY in .env.local.",
+    );
+  }
+
+  return createClient(url, secretKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
-// Reuse a single connection across hot-reloads in dev (Next.js re-evaluates
-// modules on every request in dev mode without this guard).
-export const db: DatabaseSync = global.__phonebayDb ?? createConnection();
-if (process.env.NODE_ENV !== "production") {
-  global.__phonebayDb = db;
-}
-
-if (process.env.SEED_DB !== "false") {
-  // Safe despite the circular reference: seed.ts only touches `db` inside a
-  // function body (never at module top-level), so the live ESM binding is
-  // fully populated by the time this actually executes.
-  seedIfEmpty();
-}
-
-/** Generates a URL-safe unique id (cuid-like) without extra dependencies. */
+/**
+ * Generate an application ID for entities that still use string IDs.
+ *
+ * User IDs should NOT use this function.
+ * Supabase Auth user IDs are UUIDs from auth.users.id.
+ */
 export function generateId(prefix = ""): string {
-  const random = Math.random().toString(36).slice(2, 10);
-  const time = Date.now().toString(36);
-  return `${prefix}${time}${random}`;
+  return `${prefix}${Date.now().toString(36)}${crypto
+    .randomUUID()
+    .replace(/-/g, "")
+    .slice(0, 12)}`;
+}
+
+export async function queryRows<T>(
+  query: PromiseLike<{
+    data: T[] | null;
+    error: { message: string } | null;
+  }>,
+): Promise<T[]> {
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
+export async function queryOne<T>(
+  query: PromiseLike<{
+    data: T | null;
+    error: { message: string } | null;
+  }>,
+): Promise<T | null> {
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
 }

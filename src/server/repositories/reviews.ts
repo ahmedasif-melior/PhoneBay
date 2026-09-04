@@ -1,7 +1,12 @@
-import { db, generateId } from "@/server/db";
+import {
+  generateId,
+  getDb,
+  queryOne,
+  queryRows,
+} from "@/server/db";
 import type { ReviewRecord } from "@/server/types";
 
-interface ReviewRow {
+type R = {
   id: string;
   author_id: string;
   target_seller_id: string;
@@ -9,54 +14,76 @@ interface ReviewRow {
   rating: number;
   comment: string;
   created_at: string;
-}
+};
 
-function mapRow(row: ReviewRow): ReviewRecord {
-  return {
-    id: row.id,
-    authorId: row.author_id,
-    targetSellerId: row.target_seller_id,
-    listingId: row.listing_id,
-    rating: row.rating,
-    comment: row.comment,
-    createdAt: row.created_at,
-  };
-}
+const map = (r: R): ReviewRecord => ({
+  id: r.id,
+  authorId: r.author_id,
+  targetSellerId: r.target_seller_id,
+  listingId: r.listing_id,
+  rating: r.rating,
+  comment: r.comment,
+  createdAt: r.created_at,
+});
 
 export const reviewsRepo = {
-  create(input: {
+  async create(i: {
     authorId: string;
     targetSellerId: string;
     listingId?: string | null;
     rating: number;
     comment: string;
-  }): ReviewRecord {
-    const id = generateId("rev_");
-    db.prepare(
-      `INSERT INTO reviews (id, author_id, target_seller_id, listing_id, rating, comment)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(id, input.authorId, input.targetSellerId, input.listingId ?? null, input.rating, input.comment);
-    return this.findById(id)!;
+  }) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("reviews")
+        .insert({
+          id: generateId("rev_"),
+          author_id: i.authorId,
+          target_seller_id: i.targetSellerId,
+          listing_id: i.listingId ?? null,
+          rating: i.rating,
+          comment: i.comment,
+        })
+        .select()
+        .single(),
+    );
+
+    return map(r!);
   },
 
-  findById(id: string): ReviewRecord | null {
-    const row = db.prepare("SELECT * FROM reviews WHERE id = ?").get(id) as ReviewRow | undefined;
-    return row ? mapRow(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("reviews")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 
-  listForSeller(sellerId: string): ReviewRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM reviews WHERE target_seller_id = ? ORDER BY created_at DESC")
-      .all(sellerId) as ReviewRow[];
-    return rows.map(mapRow);
-  },
-
-  averageForSeller(sellerId: string): { average: number; count: number } {
-    const row = db
-      .prepare(
-        "SELECT AVG(rating) as average, COUNT(*) as count FROM reviews WHERE target_seller_id = ?"
+  async listForSeller(id: string) {
+    return (
+      await queryRows<R>(
+        getDb()
+          .from("reviews")
+          .select("*")
+          .eq("target_seller_id", id)
+          .order("created_at", { ascending: false }),
       )
-      .get(sellerId) as { average: number | null; count: number };
-    return { average: row.average ?? 0, count: row.count };
+    ).map(map);
+  },
+
+  async averageForSeller(id: string) {
+    const rows = await this.listForSeller(id);
+
+    return {
+      average: rows.length
+        ? rows.reduce((s, r) => s + r.rating, 0) / rows.length
+        : 0,
+      count: rows.length,
+    };
   },
 };

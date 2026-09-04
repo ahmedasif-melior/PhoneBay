@@ -1,158 +1,191 @@
-import { db, generateId } from "@/server/db";
-import type { ShopProfileRecord, ShopVerificationStatus } from "@/server/types";
+import {
+  generateId,
+  getDb,
+  queryOne,
+  queryRows,
+} from "@/server/db";
+import type {
+  ShopProfileRecord,
+  ShopVerificationStatus,
+} from "@/server/types";
 
-interface ShopRow {
+type R = {
   id: string;
   shop_name: string;
   shop_email: string;
-  verified: number;
+  verified: boolean;
   verification_status: ShopVerificationStatus;
   services: string;
   verification_notes: string | null;
   verified_at: string | null;
   verified_by_admin_id: string | null;
-  is_active: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
-}
+};
 
-function mapRow(row: ShopRow): ShopProfileRecord {
-  return {
-    id: row.id,
-    shopName: row.shop_name,
-    shopEmail: row.shop_email,
-    verified: !!row.verified,
-    verificationStatus: row.verification_status,
-    services: row.services,
-    verificationNotes: row.verification_notes,
-    verifiedAt: row.verified_at,
-    verifiedByAdminId: row.verified_by_admin_id,
-    isActive: !!row.is_active,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
+const map = (r: R): ShopProfileRecord => ({
+  id: r.id,
+  shopName: r.shop_name,
+  shopEmail: r.shop_email,
+  verified: r.verified,
+  verificationStatus: r.verification_status,
+  services: r.services,
+  verificationNotes: r.verification_notes,
+  verifiedAt: r.verified_at,
+  verifiedByAdminId: r.verified_by_admin_id,
+  isActive: r.is_active,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
 
 export const shopsRepo = {
-  findById(id: string): ShopProfileRecord | null {
-    const row = db.prepare("SELECT * FROM shop_profiles WHERE id = ?").get(id) as ShopRow | undefined;
-    return row ? mapRow(row) : null;
+  async findById(id: string) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("shop_profiles")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 
-  findByEmail(email: string): ShopProfileRecord | null {
-    const row = db
-      .prepare("SELECT * FROM shop_profiles WHERE shop_email = ?")
-      .get(email.toLowerCase().trim()) as ShopRow | undefined;
-    return row ? mapRow(row) : null;
+  async findByEmail(email: string) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("shop_profiles")
+        .select("*")
+        .eq("shop_email", email.toLowerCase().trim())
+        .maybeSingle(),
+    );
+
+    return r && map(r);
   },
 
-  findByVerificationStatus(status: ShopVerificationStatus): ShopProfileRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM shop_profiles WHERE verification_status = ? ORDER BY created_at DESC")
-      .all(status) as ShopRow[];
-    return rows.map(mapRow);
+  async findByVerificationStatus(s: ShopVerificationStatus) {
+    return (
+      await queryRows<R>(
+        getDb()
+          .from("shop_profiles")
+          .select("*")
+          .eq("verification_status", s)
+          .order("created_at", { ascending: false }),
+      )
+    ).map(map);
   },
 
-  findActive(): ShopProfileRecord[] {
-    const rows = db
-      .prepare("SELECT * FROM shop_profiles WHERE is_active = 1 ORDER BY shop_name")
-      .all() as ShopRow[];
-    return rows.map(mapRow);
+  async findActive() {
+    return (
+      await queryRows<R>(
+        getDb()
+          .from("shop_profiles")
+          .select("*")
+          .eq("is_active", true)
+          .order("shop_name"),
+      )
+    ).map(map);
   },
 
-  findAll(): ShopProfileRecord[] {
-    const rows = db.prepare("SELECT * FROM shop_profiles ORDER BY created_at DESC").all() as ShopRow[];
-    return rows.map(mapRow);
+  async findAll() {
+    return (
+      await queryRows<R>(
+        getDb()
+          .from("shop_profiles")
+          .select("*")
+          .order("created_at", { ascending: false }),
+      )
+    ).map(map);
   },
 
-  create(input: {
+  async create(i: {
     shopName: string;
     shopEmail: string;
     services?: string;
-  }): ShopProfileRecord {
-    const id = generateId("shp_");
-    db.prepare(
-      `INSERT INTO shop_profiles (id, shop_name, shop_email, services)
-       VALUES (?, ?, ?, ?)`
-    ).run(id, input.shopName, input.shopEmail.toLowerCase().trim(), input.services ?? "");
+  }) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("shop_profiles")
+        .insert({
+          id: generateId("shp_"),
+          shop_name: i.shopName,
+          shop_email: i.shopEmail.toLowerCase().trim(),
+          services: i.services ?? "",
+        })
+        .select()
+        .single(),
+    );
 
-    return this.findById(id)!;
+    return map(r!);
   },
 
-  updateVerificationStatus(
-    shopId: string,
-    status: ShopVerificationStatus,
+  async updateVerificationStatus(
+    id: string,
+    s: ShopVerificationStatus,
     adminId: string,
-    notes?: string
-  ): ShopProfileRecord | null {
-    const verified = status === "approved" ? 1 : 0;
-    const verifiedAt = status === "approved" ? "datetime('now')" : null;
+    notes?: string,
+  ) {
+    const r = await queryOne<R>(
+      getDb()
+        .from("shop_profiles")
+        .update({
+          verification_status: s,
+          verified: s === "approved",
+          verified_at:
+            s === "approved" ? new Date().toISOString() : null,
+          verified_by_admin_id: adminId,
+          verification_notes: notes ?? null,
+        })
+        .eq("id", id)
+        .select()
+        .maybeSingle(),
+    );
 
-    db.prepare(
-      `UPDATE shop_profiles 
-       SET verification_status = ?, 
-           verified = ?, 
-           verified_at = ${verifiedAt ? "datetime('now')" : "NULL"}, 
-           verified_by_admin_id = ?, 
-           verification_notes = ?,
-           updated_at = datetime('now')
-       WHERE id = ?`
-    ).run(status, verified, adminId, notes ?? null, shopId);
-
-    return this.findById(shopId);
+    return r && map(r);
   },
 
-  update(
-    shopId: string,
-    fields: Partial<{
+  async update(
+    id: string,
+    f: Partial<{
       shopName: string;
       services: string;
       isActive: boolean;
-    }>
-  ): ShopProfileRecord | null {
-    const columnMap: Record<string, string> = {
-      shopName: "shop_name",
-      services: "services",
-      isActive: "is_active",
+    }>,
+  ) {
+    const p = {
+      ...(f.shopName !== undefined
+        ? { shop_name: f.shopName }
+        : {}),
+      ...(f.services !== undefined
+        ? { services: f.services }
+        : {}),
+      ...(f.isActive !== undefined
+        ? { is_active: f.isActive }
+        : {}),
     };
 
-    const sets: string[] = [];
-    const values: unknown[] = [];
-
-    for (const [key, value] of Object.entries(fields)) {
-      const column = columnMap[key];
-      if (!column) continue;
-      sets.push(`${column} = ?`);
-      values.push(typeof value === "boolean" ? (value ? 1 : 0) : value);
+    if (!Object.keys(p).length) {
+      return this.findById(id);
     }
 
-    if (sets.length === 0) return this.findById(shopId);
+    const r = await queryOne<R>(
+      getDb()
+        .from("shop_profiles")
+        .update(p)
+        .eq("id", id)
+        .select()
+        .maybeSingle(),
+    );
 
-    sets.push("updated_at = datetime('now')");
-    values.push(shopId);
-
-    db.prepare(`UPDATE shop_profiles SET ${sets.join(", ")} WHERE id = ?`).run(...(values as []));
-
-    return this.findById(shopId);
+    return r && map(r);
   },
 
-  deactivate(shopId: string): ShopProfileRecord | null {
-    db.prepare(
-      `UPDATE shop_profiles 
-       SET is_active = 0, updated_at = datetime('now')
-       WHERE id = ?`
-    ).run(shopId);
-
-    return this.findById(shopId);
+  async deactivate(id: string) {
+    return this.update(id, { isActive: false });
   },
 
-  activate(shopId: string): ShopProfileRecord | null {
-    db.prepare(
-      `UPDATE shop_profiles 
-       SET is_active = 1, updated_at = datetime('now')
-       WHERE id = ?`
-    ).run(shopId);
-
-    return this.findById(shopId);
+  async activate(id: string) {
+    return this.update(id, { isActive: true });
   },
 };

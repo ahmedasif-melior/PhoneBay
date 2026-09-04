@@ -6,9 +6,8 @@ export type OrderStatus = "processing" | "shipped" | "delivered" | "cancelled";
 export type ShopVerificationStatus = "pending" | "approved" | "rejected";
 
 export interface UserRecord {
-  id: string;
+  id: string; // UUID from auth.users
   email: string;
-  passwordHash: string;
   fullName: string;
   phone: string | null;
   avatarUrl: string | null;
@@ -41,7 +40,7 @@ export interface ShopProfileRecord {
   updatedAt: string;
 }
 
-export type PublicUser = Omit<UserRecord, "passwordHash">;
+export type PublicUser = UserRecord;
 
 export interface ListingRecord {
   id: string;
