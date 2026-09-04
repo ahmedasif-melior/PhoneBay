@@ -1,5 +1,15 @@
-import { generateId, getDb, queryOne, queryRows } from "@/server/db";
-import type { ListingRecord, ListingStatus } from "@/server/types";
+import {
+  generateId,
+  getAdminDb,
+  getDb,
+  queryOne,
+  queryRows,
+} from "@/server/db";
+
+import type {
+  ListingRecord,
+  ListingStatus,
+} from "@/server/types";
 
 type Row = {
   id: string;
@@ -65,6 +75,12 @@ export interface ListingFilters {
 }
 
 export const listingsRepo = {
+  /**
+   * Public/read-side lookup.
+   *
+   * Uses the publishable client so normal RLS policies
+   * continue to protect reads.
+   */
   async findById(id: string) {
     const r = await queryOne<Row>(
       getDb()
@@ -74,11 +90,18 @@ export const listingsRepo = {
         .maybeSingle(),
     );
 
-    return r && map(r);
+    return r ? map(r) : null;
   },
 
+  /**
+   * List marketplace/dashboard listings.
+   *
+   * Reads remain subject to RLS.
+   */
   async list(f: ListingFilters = {}) {
-    let q = getDb().from("listings").select("*");
+    let q = getDb()
+      .from("listings")
+      .select("*");
 
     if (f.sellerId) {
       q = q.eq("seller_id", f.sellerId);
@@ -87,12 +110,16 @@ export const listingsRepo = {
     if (f.status) {
       q = q.in(
         "status",
-        Array.isArray(f.status) ? f.status : [f.status],
+        Array.isArray(f.status)
+          ? f.status
+          : [f.status],
       );
     }
 
     if (f.q) {
-      q = q.or(`brand.ilike.%${f.q}%,model.ilike.%${f.q}%`);
+      q = q.or(
+        `brand.ilike.%${f.q}%,model.ilike.%${f.q}%`,
+      );
     }
 
     if (f.brands?.length) {
@@ -119,20 +146,40 @@ export const listingsRepo = {
       q = q.lte("price", f.maxPrice);
     }
 
-    q =
-      f.sort === "price-asc"
-        ? q.order("price")
-        : f.sort === "price-desc"
-          ? q.order("price", { ascending: false })
-          : f.sort === "recommended"
-            ? q
-                .order("score", { ascending: false })
-                .order("created_at", { ascending: false })
-            : q.order("created_at", { ascending: false });
+    if (f.sort === "price-asc") {
+      q = q.order("price", {
+        ascending: true,
+      });
+    } else if (f.sort === "price-desc") {
+      q = q.order("price", {
+        ascending: false,
+      });
+    } else if (f.sort === "recommended") {
+      q = q
+        .order("score", {
+          ascending: false,
+          nullsFirst: false,
+        })
+        .order("created_at", {
+          ascending: false,
+        });
+    } else {
+      q = q.order("created_at", {
+        ascending: false,
+      });
+    }
 
-    return (await queryRows<Row>(q)).map(map);
+    return (
+      await queryRows<Row>(q)
+    ).map(map);
   },
 
+  /**
+   * Create a listing.
+   *
+   * This is a trusted server operation and therefore
+   * uses the Supabase secret/service-role client.
+   */
   async create(i: {
     sellerId: string;
     brand: string;
@@ -151,10 +198,16 @@ export const listingsRepo = {
     imageUrls?: string[];
     status?: ListingStatus;
   }) {
+    if (!i.sellerId) {
+      throw new Error(
+        "Cannot create listing without a seller ID.",
+      );
+    }
+
     const id = generateId("lst_");
 
     const r = await queryOne<Row>(
-      getDb()
+      getAdminDb()
         .from("listings")
         .insert({
           id,
@@ -169,19 +222,36 @@ export const listingsRepo = {
           city: i.city,
           area: i.area ?? null,
           description: i.description ?? null,
-          battery_health: i.batteryHealth ?? null,
-          repair_history: i.repairHistory ?? null,
-          photo_count: i.photoCount ?? 0,
-          image_urls: i.imageUrls ?? [],
-          status: i.status ?? "active",
+          battery_health:
+            i.batteryHealth ?? null,
+          repair_history:
+            i.repairHistory ?? null,
+          photo_count:
+            i.photoCount ?? 0,
+          image_urls:
+            i.imageUrls ?? [],
+          status:
+            i.status ?? "active",
         })
         .select()
         .single(),
     );
 
-    return map(r!);
+    if (!r) {
+      throw new Error(
+        "Listing was not created.",
+      );
+    }
+
+    return map(r);
   },
 
+  /**
+   * Update a listing.
+   *
+   * Uses admin client because this is a trusted
+   * server-side operation.
+   */
   async update(
     id: string,
     fields: Partial<{
@@ -196,27 +266,31 @@ export const listingsRepo = {
   ) {
     const c = await this.findById(id);
 
+    if (!c) {
+      return null;
+    }
+
     if (
-      c?.status === "sold" &&
+      c.status === "sold" &&
       fields.status &&
       fields.status !== "sold"
     ) {
       return c;
     }
 
-    const m: Record<string, string> = {
-      price: "price",
-      negotiable: "negotiable",
-      condition: "condition",
-      description: "description",
-      status: "status",
-      verified: "verified",
-      score: "score",
-    };
+    const allowed = new Set([
+      "price",
+      "negotiable",
+      "condition",
+      "description",
+      "status",
+      "verified",
+      "score",
+    ]);
 
     const p = Object.fromEntries(
-      Object.entries(fields).flatMap(([k, v]) =>
-        m[k] ? [[m[k], v]] : [],
+      Object.entries(fields).filter(
+        ([key]) => allowed.has(key),
       ),
     );
 
@@ -225,7 +299,7 @@ export const listingsRepo = {
     }
 
     const r = await queryOne<Row>(
-      getDb()
+      getAdminDb()
         .from("listings")
         .update(p)
         .eq("id", id)
@@ -233,12 +307,15 @@ export const listingsRepo = {
         .maybeSingle(),
     );
 
-    return r && map(r);
+    return r ? map(r) : null;
   },
 
+  /**
+   * Delete a listing.
+   */
   async delete(id: string) {
     await queryOne(
-      getDb()
+      getAdminDb()
         .from("listings")
         .delete()
         .eq("id", id)
@@ -247,19 +324,35 @@ export const listingsRepo = {
     );
   },
 
+  /**
+   * Increment listing views.
+   */
   async incrementViews(id: string) {
     const current = await this.findById(id);
 
-    if (current) {
-      await getDb()
-        .from("listings")
-        .update({ views: current.views + 1 })
-        .eq("id", id);
+    if (!current) {
+      return;
+    }
+
+    const { error } = await getAdminDb()
+      .from("listings")
+      .update({
+        views: current.views + 1,
+      })
+      .eq("id", id);
+
+    if (error) {
+      throw new Error(error.message);
     }
   },
 
+  /**
+   * Count listings belonging to a seller.
+   */
   async countBySeller(sellerId: string) {
-    const rows = await this.list({ sellerId });
+    const rows = await this.list({
+      sellerId,
+    });
 
     const out = {
       active: 0,
@@ -270,7 +363,9 @@ export const listingsRepo = {
 
     for (const r of rows) {
       if (r.status in out) {
-        out[r.status as keyof typeof out]++;
+        out[
+          r.status as keyof typeof out
+        ]++;
       }
     }
 

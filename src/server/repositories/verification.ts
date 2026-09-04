@@ -1,10 +1,13 @@
 import {
   generateId,
+  getAdminDb,
   getDb,
   queryOne,
   queryRows,
 } from "@/server/db";
+
 import { listingsRepo } from "@/server/repositories/listings";
+
 import type {
   CertificateRecord,
   VerificationRequestRecord,
@@ -39,7 +42,9 @@ type C = {
   valid_until: string;
 };
 
-const mv = (r: V): VerificationRequestRecord => ({
+const mv = (
+  r: V,
+): VerificationRequestRecord => ({
   id: r.id,
   listingId: r.listing_id,
   technicianId: r.technician_id,
@@ -50,7 +55,9 @@ const mv = (r: V): VerificationRequestRecord => ({
   testResults: r.test_results,
 });
 
-const mc = (r: C): CertificateRecord => ({
+const mc = (
+  r: C,
+): CertificateRecord => ({
   id: r.id,
   listingId: r.listing_id,
   overallScore: r.overall_score,
@@ -65,9 +72,21 @@ const mc = (r: C): CertificateRecord => ({
 });
 
 export const verificationRepo = {
+  /**
+   * Create a verification request for a listing.
+   *
+   * This is a trusted server operation, so it uses
+   * the admin/service-role client.
+   */
   async create(listingId: string) {
+    if (!listingId) {
+      throw new Error(
+        "Cannot create verification request without a listing ID.",
+      );
+    }
+
     const r = await queryOne<V>(
-      getDb()
+      getAdminDb()
         .from("verification_requests")
         .insert({
           id: generateId("vrf_"),
@@ -78,7 +97,13 @@ export const verificationRepo = {
         .single(),
     );
 
-    return mv(r!);
+    if (!r) {
+      throw new Error(
+        "Verification request was not created.",
+      );
+    }
+
+    return mv(r);
   },
 
   async findById(id: string) {
@@ -90,7 +115,7 @@ export const verificationRepo = {
         .maybeSingle(),
     );
 
-    return r && mv(r);
+    return r ? mv(r) : null;
   },
 
   async listByListing(id: string) {
@@ -100,7 +125,9 @@ export const verificationRepo = {
           .from("verification_requests")
           .select("*")
           .eq("listing_id", id)
-          .order("requested_at", { ascending: false }),
+          .order("requested_at", {
+            ascending: false,
+          }),
       )
     ).map(mv);
   },
@@ -117,6 +144,13 @@ export const verificationRepo = {
     ).map(mv);
   },
 
+  /**
+   * Complete verification.
+   *
+   * Verification updates, listing verification,
+   * and certificate creation are all trusted server
+   * operations and therefore use the admin client.
+   */
   async complete(
     id: string,
     i: {
@@ -134,18 +168,22 @@ export const verificationRepo = {
       }[];
     },
   ) {
-    const request = await this.findById(id);
+    const request =
+      await this.findById(id);
 
     if (!request) {
-      throw new Error("Verification request not found");
+      throw new Error(
+        "Verification request not found",
+      );
     }
 
     const v = await queryOne<V>(
-      getDb()
+      getAdminDb()
         .from("verification_requests")
         .update({
           status: "completed",
-          completed_at: new Date().toISOString(),
+          completed_at:
+            new Date().toISOString(),
           score: i.score,
           test_results: i.testResults,
           technician_id: i.technicianId,
@@ -155,38 +193,62 @@ export const verificationRepo = {
         .single(),
     );
 
-    await listingsRepo.update(request.listingId, {
-      verified: true,
-      score: i.score,
-    });
+    if (!v) {
+      throw new Error(
+        "Verification request could not be completed.",
+      );
+    }
+
+    await listingsRepo.update(
+      request.listingId,
+      {
+        verified: true,
+        score: i.score,
+      },
+    );
 
     const cert = await queryOne<C>(
-      getDb()
+      getAdminDb()
         .from("certificates")
         .upsert(
           {
             id: generateId("crt_"),
-            listing_id: request.listingId,
+            listing_id:
+              request.listingId,
             overall_score: i.score,
-            battery_health: i.batteryHealth,
+            battery_health:
+              i.batteryHealth,
             display_score: i.display,
             camera_score: i.camera,
-            performance_score: i.performance,
-            physical_condition: i.physicalCondition,
-            tested_by: i.technicianName,
+            performance_score:
+              i.performance,
+            physical_condition:
+              i.physicalCondition,
+            tested_by:
+              i.technicianName,
             valid_until: new Date(
-              Date.now() + 2592e6,
+              Date.now() +
+                2592e6,
             ).toISOString(),
           },
-          { onConflict: "listing_id" },
+          {
+            onConflict:
+              "listing_id",
+          },
         )
         .select()
         .single(),
     );
 
+    if (!cert) {
+      throw new Error(
+        "Verification certificate could not be created.",
+      );
+    }
+
     return {
-      verification: mv(v!),
-      certificate: mc(cert!),
+      verification: mv(v),
+      certificate: mc(cert),
     };
   },
 };
@@ -201,7 +263,7 @@ export const certificateRepo = {
         .maybeSingle(),
     );
 
-    return r && mc(r);
+    return r ? mc(r) : null;
   },
 
   async findById(id: string) {
@@ -213,7 +275,7 @@ export const certificateRepo = {
         .maybeSingle(),
     );
 
-    return r && mc(r);
+    return r ? mc(r) : null;
   },
 
   async listBySeller(id: string) {
@@ -232,8 +294,13 @@ export const certificateRepo = {
         getDb()
           .from("certificates")
           .select("*")
-          .in("listing_id", listingIds)
-          .order("issued_at", { ascending: false }),
+          .in(
+            "listing_id",
+            listingIds,
+          )
+          .order("issued_at", {
+            ascending: false,
+          }),
       )
     ).map(mc);
   },

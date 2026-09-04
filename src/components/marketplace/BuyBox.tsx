@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Heart, MessageCircle, Flag, ShieldCheck } from "lucide-react";
+import { Heart, MessageCircle, Flag, ShieldCheck, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
@@ -9,6 +10,7 @@ import { formatPKR } from "@/lib/utils";
 import type { Phone } from "@/data/phones";
 
 export function BuyBox({ phone }: { phone: Phone }) {
+  const router = useRouter();
   const [saved, setSaved] = React.useState(phone.saved);
   const [savePending, setSavePending] = React.useState(false);
   const [buyOpen, setBuyOpen] = React.useState(false);
@@ -58,20 +60,37 @@ export function BuyBox({ phone }: { phone: Phone }) {
     event.preventDefault();
     if (!messageText.trim()) return;
 
-    const response = await fetch("/api/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sellerId: phone.sellerId,
-        listingId: phone.id,
-        text: messageText.trim(),
-      }),
-    });
+    setSubmitting(true);
 
-    if (response.ok) {
-      setMessageSent(true);
-      setMessageText("");
+    try {
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sellerId: phone.sellerId,
+          listingId: phone.id,
+          text: messageText.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setMessageSent(true);
+        setMessageText("");
+      } else {
+        console.error("Failed to send message");
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const handleViewMessages = () => {
+    setMessageOpen(false);
+    setMessageSent(false);
+    // Navigate to messages dashboard
+    router.push("/dashboard/messages");
   };
 
   return (
@@ -110,6 +129,7 @@ export function BuyBox({ phone }: { phone: Phone }) {
         Payments are protected — funds are held until you confirm the device on delivery.
       </div>
 
+      {/* Buy Order Modal */}
       <Modal open={buyOpen} onClose={() => { setBuyOpen(false); setOrderPlaced(false); setOrderError(""); }} title={orderPlaced ? undefined : "Confirm your order"}>
         {orderPlaced ? (
           <div className="text-center py-2">
@@ -141,16 +161,39 @@ export function BuyBox({ phone }: { phone: Phone }) {
         )}
       </Modal>
 
-      <Modal open={messageOpen} onClose={() => { setMessageOpen(false); setMessageSent(false); }} title={messageSent ? undefined : "Message the seller"}>
+      {/* Message Modal */}
+      <Modal 
+        open={messageOpen} 
+        onClose={() => { 
+          setMessageOpen(false); 
+          setMessageSent(false); 
+        }} 
+        title={messageSent ? undefined : "Message the seller"}
+      >
         {messageSent ? (
           <div className="text-center py-2">
             <div className="h-14 w-14 rounded-full bg-brand-tint text-brand flex items-center justify-center mx-auto mb-4">
               <MessageCircle className="h-7 w-7" />
             </div>
-            <h3 className="font-semibold text-lg">Message sent</h3>
-            <p className="text-sm text-ink-soft mt-1.5">The seller usually replies within an hour.</p>
-            <Button fullWidth className="mt-6" onClick={() => setMessageOpen(false)}>
-              Done
+            <h3 className="font-semibold text-lg">Message sent!</h3>
+            <p className="text-sm text-ink-soft mt-1.5">
+              The seller usually replies within an hour. You can view the full conversation in your messages.
+            </p>
+            <Button fullWidth className="mt-6" onClick={handleViewMessages}>
+              <MessageCircle className="h-4 w-4" />
+              View conversation
+              <ChevronRight className="h-4 w-4 ml-2" />
+            </Button>
+            <Button 
+              fullWidth 
+              variant="ghost" 
+              className="mt-2"
+              onClick={() => {
+                setMessageOpen(false);
+                setMessageSent(false);
+              }}
+            >
+              Continue browsing
             </Button>
           </div>
         ) : (
@@ -160,15 +203,22 @@ export function BuyBox({ phone }: { phone: Phone }) {
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
               placeholder={`Hi, is the ${phone.model} still available?`}
-              className="w-full min-h-28 rounded-[var(--pb-radius-sm)] border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand"
+              disabled={submitting}
+              className="w-full min-h-28 rounded-[var(--pb-radius-sm)] border border-border-strong bg-surface px-3.5 py-2.5 text-[15px] focus:outline-none focus:ring-2 focus:ring-brand/25 focus:border-brand disabled:opacity-60"
             />
-            <Button type="submit" fullWidth>
-              Send message
+            <Button 
+              type="submit" 
+              fullWidth 
+              loading={submitting}
+              disabled={!messageText.trim() || submitting}
+            >
+              {submitting ? "Sending..." : "Send message"}
             </Button>
           </form>
         )}
       </Modal>
 
+      {/* Report Modal */}
       <Modal open={reportOpen} onClose={() => setReportOpen(false)} title="Report this listing">
         <form
           className="flex flex-col gap-4"
