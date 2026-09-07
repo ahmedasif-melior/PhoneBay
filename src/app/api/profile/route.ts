@@ -14,7 +14,7 @@ export async function PUT(req: NextRequest) {
   }
 
   const next = parsed.data;
-  const updatedUser = usersRepo.update(user.id, {
+  const updatedUser = await usersRepo.update(user.id, {
     fullName: next.fullName ?? user.fullName,
     city: next.city ?? user.city,
     bio: next.bio ?? user.bio,

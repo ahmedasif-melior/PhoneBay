@@ -9,11 +9,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const listing = listingsRepo.findById(id);
+  const listing = await listingsRepo.findById(id);
   if (!listing) return jsonError("Listing not found.", 404);
 
   listingsRepo.incrementViews(id);
-  const certificate = certificateRepo.findByListingId(id);
+  const certificate = await certificateRepo.findByListingId(id);
 
   return jsonOk({ listing: { ...listing, views: listing.views + 1 }, certificate });
 }
@@ -26,7 +26,7 @@ export async function PATCH(
     const { id } = await params;
     const { user } = await requireUser();
 
-    const listing = listingsRepo.findById(id);
+    const listing = await listingsRepo.findById(id);
     if (!listing) return jsonError("Listing not found.", 404);
     if (listing.sellerId !== user.id && !isAdminRole(user.role)) {
       return jsonError("You don't have permission to edit this listing.", 403);
@@ -42,7 +42,7 @@ export async function PATCH(
       return jsonError("This item is sold and its status is locked.", 409);
     }
 
-    const updated = listingsRepo.update(id, parsed.data);
+    const updated = await listingsRepo.update(id, parsed.data);
     return jsonOk({ listing: updated });
   } catch (err) {
     if (isAuthError(err)) return jsonError(err.message, 401);
@@ -58,7 +58,7 @@ export async function DELETE(
     const { id } = await params;
     const { user } = await requireUser();
 
-    const listing = listingsRepo.findById(id);
+    const listing = await listingsRepo.findById(id);
     if (!listing) return jsonError("Listing not found.", 404);
     if (listing.sellerId !== user.id && !isAdminRole(user.role)) {
       return jsonError("You don't have permission to delete this listing.", 403);

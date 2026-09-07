@@ -81,9 +81,9 @@ export const listingsRepo = {
    * Uses the publishable client so normal RLS policies
    * continue to protect reads.
    */
-  async findById(id: string) {
+  async findById(id: string, trusted = false) {
     const r = await queryOne<Row>(
-      getDb()
+      (trusted ? getAdminDb() : getDb())
         .from("listings")
         .select("*")
         .eq("id", id)
@@ -96,10 +96,10 @@ export const listingsRepo = {
   /**
    * List marketplace/dashboard listings.
    *
-   * Reads remain subject to RLS.
+   * Reads remain subject to RLS unless trusted (admin) is set.
    */
-  async list(f: ListingFilters = {}) {
-    let q = getDb()
+  async list(f: ListingFilters = {}, trusted = false) {
+    let q = (trusted ? getAdminDb() : getDb())
       .from("listings")
       .select("*");
 
@@ -264,7 +264,7 @@ export const listingsRepo = {
       score: number;
     }>,
   ) {
-    const c = await this.findById(id);
+    const c = await this.findById(id, true);
 
     if (!c) {
       return null;

@@ -5,6 +5,7 @@ import {
   jsonOk,
   requireUser,
   isAuthError,
+  isAdminRole,
 } from "@/server/http";
 
 import { sendMessageSchema } from "@/server/validation";
@@ -27,72 +28,78 @@ import { usersRepo } from "@/server/repositories/users";
  *
  * Uses cache: "no-store" to ensure fresh data.
  */
+// GET /api/conversations
 export async function GET() {
   try {
     const { user } = await requireUser();
 
-    const conversations =
-      await conversationsRepo.listForUser(user.id);
+    const isAdmin = isAdminRole(user.role);
+    const conversations = isAdmin
+      ? await conversationsRepo.listAll()
+      : await conversationsRepo.listForUser(user.id);
 
     const enriched = await Promise.all(
       conversations.map(async (conversation) => {
-        const messages =
-          await messagesRepo.listByConversation(
-            conversation.id,
-          );
+        const messages = await messagesRepo.listByConversation(conversation.id);
 
         const otherUserId =
           conversation.buyerId === user.id
             ? conversation.sellerId
-            : conversation.buyerId;
+            : conversation.sellerId === user.id
+              ? conversation.buyerId
+              : conversation.buyerId;
 
-        const other =
-          await usersRepo.findById(otherUserId);
+        const [other, buyer, seller] = await Promise.all([
+          usersRepo.findById(otherUserId),
+          usersRepo.findById(conversation.buyerId),
+          usersRepo.findById(conversation.sellerId),
+        ]);
 
-        const lastMessage =
-          messages.length > 0
-            ? messages[messages.length - 1]
-            : null;
-
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
         const unreadCount = messages.filter(
-          (message) =>
-            !message.read &&
-            message.senderId !== user.id,
+          (message) => !message.read && message.senderId !== user.id,
         ).length;
+
+        // Build otherParty safely
+        let otherParty = null;
+        if (other) {
+          otherParty = {
+            id: other.id,
+            fullName: other.fullName,
+            avatarUrl: other.avatarUrl,
+            phoneNumber: other.phone ?? null,
+          };
+        } else if (buyer && seller) {
+          // If 'other' user not found, fallback to buyer/seller names
+          otherParty = {
+            id: otherUserId,
+            fullName: `${buyer.fullName} ↔ ${seller.fullName}`,
+            avatarUrl: null,
+            phoneNumber: buyer.phone ?? seller.phone ?? null,
+          };
+        }
 
         return {
           ...conversation,
-          otherParty: other
-            ? {
-                id: other.id,
-                fullName: other.fullName,
-                avatarUrl: other.avatarUrl,
-                phoneNumber: other.phoneNumber ?? null,
-              }
-            : null,
+          otherParty,
+          participants: {
+            buyer: buyer ? { id: buyer.id, fullName: buyer.fullName } : null,
+            seller: seller ? { id: seller.id, fullName: seller.fullName } : null,
+          },
           lastMessage,
           unreadCount,
         };
       }),
     );
 
-    return jsonOk({
-      conversations: enriched,
-    });
+    return jsonOk({ conversations: enriched });
   } catch (err) {
     if (isAuthError(err)) {
       return jsonError(err.message, 401);
     }
-
-    console.error(
-      "GET /api/conversations failed:",
-      err,
-    );
-
+    console.error("GET /api/conversations failed:", err);
     return jsonError(
-      err instanceof Error
-        ? err.message
-        : "Failed to load conversations.",
+      err instanceof Error ? err.message : "Failed to load conversations.",
       500,
     );
   }

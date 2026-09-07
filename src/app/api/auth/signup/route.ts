@@ -155,25 +155,42 @@ export async function POST(req: NextRequest) {
      * The Auth trigger creates the profile with role USER.
      * For a shop signup, change it to SHOP.
      */
+    if (accountPurpose && accountPurpose !== "shop") {
+      const updated = await usersRepo.update(user.id, {
+        accountPurpose,
+      });
+      if (!updated) {
+        return jsonError("Unable to save account purpose.", 500);
+      }
+      user = updated;
+    }
+
     if (accountPurpose === "shop") {
-      user = await usersRepo.update(user.id, {
+      const roleUpdated = await usersRepo.update(user.id, {
         role: "SHOP",
+        accountPurpose: "shop",
       });
 
-      /*
-       * Create the shop profile.
-       */
+      if (!roleUpdated) {
+        return jsonError("Unable to update your account role.", 500);
+      }
+
+      user = roleUpdated;
+
       const shopProfile = await shopsRepo.create({
         shopName: fullName,
         shopEmail: normalizedEmail,
       });
 
-      /*
-       * Link the public user profile to the shop.
-       */
-      user = await usersRepo.update(user.id, {
+      const linkedUser = await usersRepo.update(user.id, {
         shopId: shopProfile.id,
       });
+
+      if (!linkedUser) {
+        return jsonError("Unable to link your shop profile.", 500);
+      }
+
+      user = linkedUser;
     }
 
     const requiresEmailVerification = !data.session;

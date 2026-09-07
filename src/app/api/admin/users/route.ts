@@ -1,23 +1,22 @@
 import { jsonError, jsonOk, requireAdmin, isAuthError } from "@/server/http";
 import { usersRepo, toPublicUser } from "@/server/repositories/users";
+import { getAdminDb } from "@/server/db";
 import { auditLogsRepo } from "@/server/repositories/audit-logs";
 
 export async function GET() {
   try {
     const { user: adminUser } = await requireAdmin();
 
-    // Fetch all users
-    const users = (await new Promise((resolve) => {
-      const query = "SELECT * FROM users ORDER BY created_at DESC";
-      resolve(
-        require("@/server/db").db
-          .prepare(query)
-          .all()
-      );
-    })) as any[];
+    const { data: users, error } = await getAdminDb()
+      .from("users")
+      .select("id, email, full_name, role, is_blocked, trust_score, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
 
     return jsonOk({
-      users: users.map((u: any) => ({
+      users: (users ?? []).map((u) => ({
         id: u.id,
         email: u.email,
         fullName: u.full_name,
@@ -42,14 +41,14 @@ export async function POST(req: Request) {
       return jsonError("Missing userId or action", 400);
     }
 
-    const targetUser = usersRepo.findById(body.userId);
+    const targetUser = await usersRepo.findById(body.userId);
     if (!targetUser) {
       return jsonError("User not found", 404);
     }
 
     if (body.action === "block") {
       const reason = body.reason || "No reason provided";
-      const blocked = usersRepo.blockUser(targetUser.id, reason);
+      const blocked = await usersRepo.blockUser(targetUser.id, reason);
 
       auditLogsRepo.log({
         adminId: adminUser.id,
@@ -64,7 +63,7 @@ export async function POST(req: Request) {
         user: toPublicUser(blocked!),
       });
     } else if (body.action === "unblock") {
-      const unblocked = usersRepo.unblockUser(targetUser.id);
+      const unblocked = await usersRepo.unblockUser(targetUser.id);
 
       auditLogsRepo.log({
         adminId: adminUser.id,

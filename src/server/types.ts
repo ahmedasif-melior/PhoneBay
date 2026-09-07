@@ -21,6 +21,7 @@ export interface UserRecord {
   isBlocked: boolean;
   blockedReason: string | null;
   blockedAt: string | null;
+  accountPurpose?: AccountPurpose; // ADDED: Optional account purpose field
   createdAt: string;
   updatedAt: string;
 }

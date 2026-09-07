@@ -1,4 +1,4 @@
-import { generateId, getDb, queryOne, queryRows } from "@/server/db";
+import { generateId, getAdminDb, queryOne, queryRows } from "@/server/db";
 import type { AdminAuditLogRecord } from "@/server/types";
 
 type R = {
@@ -24,7 +24,7 @@ const map = (r: R): AdminAuditLogRecord => ({
 export const auditLogsRepo = {
   async findById(id: string) {
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("admin_audit_logs")
         .select("*")
         .eq("id", id)
@@ -37,7 +37,7 @@ export const auditLogsRepo = {
   async findByAdmin(id: string, limit = 100) {
     return (
       await queryRows<R>(
-        getDb()
+        getAdminDb()
           .from("admin_audit_logs")
           .select("*")
           .eq("admin_id", id)
@@ -50,7 +50,7 @@ export const auditLogsRepo = {
   async findByEntity(t: string, id: string) {
     return (
       await queryRows<R>(
-        getDb()
+        getAdminDb()
           .from("admin_audit_logs")
           .select("*")
           .eq("entity_type", t)
@@ -63,7 +63,7 @@ export const auditLogsRepo = {
   async findAll(limit = 500) {
     return (
       await queryRows<R>(
-        getDb()
+        getAdminDb()
           .from("admin_audit_logs")
           .select("*")
           .order("created_at", { ascending: false })
@@ -80,7 +80,7 @@ export const auditLogsRepo = {
     changes?: Record<string, unknown>;
   }) {
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("admin_audit_logs")
         .insert({
           id: generateId("aud_"),

@@ -11,6 +11,7 @@ export const signUpSchema = z.object({
 export const signInSchema = z.object({
   email: z.string().trim().email("Please enter a valid email."),
   password: z.string().min(1, "Please enter your password."),
+  expectedRole: z.enum(["USER", "SHOP", "ADMIN"]).optional(),
 });
 
 export const profileUpdateSchema = z.object({

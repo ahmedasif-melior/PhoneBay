@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db, generateId } from "@/server/db";
+import { getDb, generateId } from "@/server/db";
 import { jsonError, jsonOk, requireUser, isAuthError } from "@/server/http";
 
 export async function POST(
@@ -10,20 +10,32 @@ export async function POST(
     const { id } = await params;
     const { user } = await requireUser();
 
-    const existing = db
-      .prepare("SELECT id FROM saved_listings WHERE user_id = ? AND listing_id = ?")
-      .get(user.id, id);
+    const db = getDb();
+    const { data: existing, error: lookupError } = await db
+      .from("saved_listings")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("listing_id", id)
+      .maybeSingle();
+
+    if (lookupError) throw new Error(lookupError.message);
 
     if (existing) {
-      db.prepare("DELETE FROM saved_listings WHERE user_id = ? AND listing_id = ?").run(user.id, id);
+      const { error } = await db
+        .from("saved_listings")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("listing_id", id);
+      if (error) throw new Error(error.message);
       return jsonOk({ saved: false });
     }
 
-    db.prepare("INSERT INTO saved_listings (id, user_id, listing_id) VALUES (?, ?, ?)").run(
-      generateId("sav_"),
-      user.id,
-      id
-    );
+    const { error } = await db.from("saved_listings").insert({
+      id: generateId("sav_"),
+      user_id: user.id,
+      listing_id: id,
+    });
+    if (error) throw new Error(error.message);
     return jsonOk({ saved: true });
   } catch (err) {
     if (isAuthError(err)) return jsonError(err.message, 401);

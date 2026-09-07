@@ -9,7 +9,7 @@ export async function GET() {
       return jsonError("Only shop accounts can view the verification queue.", 403);
     }
 
-    const requests = verificationRepo.listPending();
+    const requests = await verificationRepo.listPending();
     const withListings = requests.map((r) => ({
       ...r,
       listing: listingsRepo.findById(r.listingId),

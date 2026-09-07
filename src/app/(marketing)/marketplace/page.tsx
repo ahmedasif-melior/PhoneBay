@@ -14,37 +14,12 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MarketplacePage() {
-  const response = await listingsRepo.list({
+  const listings = await listingsRepo.list({
     status: "active",
     sort: "recommended",
   });
 
-  /*
-   * Support the most common repository return shapes:
-   *
-   * 1. ListingRecord[]
-   * 2. { listings: ListingRecord[] }
-   * 3. { data: ListingRecord[] }
-   */
-  let listings: ListingRecord[] = [];
-
-  if (Array.isArray(response)) {
-    listings = response;
-  } else if (
-    response &&
-    typeof response === "object" &&
-    "listings" in response &&
-    Array.isArray(response.listings)
-  ) {
-    listings = response.listings;
-  } else if (
-    response &&
-    typeof response === "object" &&
-    "data" in response &&
-    Array.isArray(response.data)
-  ) {
-    listings = response.data;
-  }
+  const marketplaceListings: ListingRecord[] = listings;
 
   return (
     <Section className="pt-10 sm:pt-14">
@@ -59,7 +34,7 @@ export default async function MarketplacePage() {
 
       <div className="mt-8">
         <MarketplaceBrowser
-          initialListings={listings}
+          initialListings={marketplaceListings}
         />
       </div>
     </Section>

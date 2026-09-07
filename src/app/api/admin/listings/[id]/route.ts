@@ -16,13 +16,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return jsonError("A valid listing status is required.", 422);
     }
 
-    const listing = listingsRepo.findById(id);
+    const listing = await listingsRepo.findById(id, true);
     if (!listing) return jsonError("Listing not found.", 404);
     if (listing.status === "sold" && status !== "sold") {
       return jsonError("Sold listings are locked and cannot have their status changed.", 409);
     }
 
-    const updated = listingsRepo.update(id, { status: status as typeof listing.status });
+    const updated = await listingsRepo.update(id, { status: status as typeof listing.status });
     if (!updated) return jsonError("Unable to update listing.", 500);
 
     return jsonOk({ listing: updated, note: note || null });

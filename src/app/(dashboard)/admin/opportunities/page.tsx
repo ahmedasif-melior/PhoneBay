@@ -3,8 +3,8 @@ import { ArrowLeft, BarChart3, BriefcaseBusiness, Factory, HandCoins, Users } fr
 import { Card } from "@/components/ui/Card";
 import { getAdminData } from "@/app/(dashboard)/admin/_data";
 
-export default function AdminOpportunitiesPage() {
-  const { pipeline } = getAdminData();
+export default async function AdminOpportunitiesPage() {
+  const { pipeline } = await getAdminData();
   const stages = pipeline.opportunities;
 
   return (

@@ -11,18 +11,18 @@ export async function POST(
     const { id } = await params;
     const { user } = await requireUser();
 
-    const listing = listingsRepo.findById(id);
+    const listing = await listingsRepo.findById(id);
     if (!listing) return jsonError("Listing not found.", 404);
     if (listing.sellerId !== user.id) {
       return jsonError("Only the listing owner can request verification.", 403);
     }
 
-    const existing = verificationRepo.listByListing(id);
+    const existing = await verificationRepo.listByListing(id);
     if (existing.some((v) => v.status !== "completed")) {
       return jsonError("A verification request is already in progress for this listing.", 409);
     }
 
-    const request = verificationRepo.create(id);
+    const request = await verificationRepo.create(id);
     return jsonOk({ request }, 201);
   } catch (err) {
     if (isAuthError(err)) return jsonError(err.message, 401);
@@ -35,6 +35,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const requests = verificationRepo.listByListing(id);
+  const requests = await verificationRepo.listByListing(id);
   return jsonOk({ requests });
 }

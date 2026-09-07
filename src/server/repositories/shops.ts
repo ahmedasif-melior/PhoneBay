@@ -1,6 +1,6 @@
 import {
   generateId,
-  getDb,
+  getAdminDb,
   queryOne,
   queryRows,
 } from "@/server/db";
@@ -42,7 +42,7 @@ const map = (r: R): ShopProfileRecord => ({
 export const shopsRepo = {
   async findById(id: string) {
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("shop_profiles")
         .select("*")
         .eq("id", id)
@@ -54,7 +54,7 @@ export const shopsRepo = {
 
   async findByEmail(email: string) {
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("shop_profiles")
         .select("*")
         .eq("shop_email", email.toLowerCase().trim())
@@ -67,7 +67,7 @@ export const shopsRepo = {
   async findByVerificationStatus(s: ShopVerificationStatus) {
     return (
       await queryRows<R>(
-        getDb()
+        getAdminDb()
           .from("shop_profiles")
           .select("*")
           .eq("verification_status", s)
@@ -79,7 +79,7 @@ export const shopsRepo = {
   async findActive() {
     return (
       await queryRows<R>(
-        getDb()
+        getAdminDb()
           .from("shop_profiles")
           .select("*")
           .eq("is_active", true)
@@ -91,7 +91,7 @@ export const shopsRepo = {
   async findAll() {
     return (
       await queryRows<R>(
-        getDb()
+        getAdminDb()
           .from("shop_profiles")
           .select("*")
           .order("created_at", { ascending: false }),
@@ -105,7 +105,7 @@ export const shopsRepo = {
     services?: string;
   }) {
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("shop_profiles")
         .insert({
           id: generateId("shp_"),
@@ -127,7 +127,7 @@ export const shopsRepo = {
     notes?: string,
   ) {
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("shop_profiles")
         .update({
           verification_status: s,
@@ -170,7 +170,7 @@ export const shopsRepo = {
     }
 
     const r = await queryOne<R>(
-      getDb()
+      getAdminDb()
         .from("shop_profiles")
         .update(p)
         .eq("id", id)

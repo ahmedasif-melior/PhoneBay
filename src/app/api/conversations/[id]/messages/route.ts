@@ -5,6 +5,7 @@ import {
   jsonOk,
   requireUser,
   isAuthError,
+  isAdminRole,
 } from "@/server/http";
 
 import {
@@ -46,19 +47,21 @@ export async function GET(
     const isParticipant =
       conversation.buyerId === user.id ||
       conversation.sellerId === user.id;
+    const isAdmin = isAdminRole(user.role);
 
-    if (!isParticipant) {
+    if (!isParticipant && !isAdmin) {
       return jsonError(
         "You don't have access to this conversation.",
         403,
       );
     }
 
-    // Mark all unread messages from the other participant as read
-    await messagesRepo.markRead(
-      id,
-      user.id,
-    );
+    if (isParticipant) {
+      await messagesRepo.markRead(
+        id,
+        user.id,
+      );
+    }
 
     const messages =
       await messagesRepo.listByConversation(id);

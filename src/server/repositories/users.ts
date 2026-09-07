@@ -16,6 +16,7 @@ type UserRow = {
   bio: string | null;
   city: string | null;
   role: Role;
+  account_purpose: "buyer" | "seller" | "both" | "shop" | null;
   shop_id: string | null;
   email_verified: boolean;
   phone_verified: boolean;
@@ -36,6 +37,7 @@ const mapRow = (r: UserRow): UserRecord => ({
   bio: r.bio,
   city: r.city,
   role: r.role,
+  accountPurpose: r.account_purpose,
   shopId: r.shop_id,
   emailVerified: r.email_verified,
   phoneVerified: r.phone_verified,
@@ -183,8 +185,10 @@ export const usersRepo = {
       emailVerified: boolean;
       phoneVerified: boolean;
       trustScore: number;
+      role: Role;
       isBlocked: boolean;
       blockedReason: string | null;
+      accountPurpose: "buyer" | "seller" | "both" | "shop" | null;
     }>,
   ) {
     const columnMap: Record<string, string> = {
@@ -197,8 +201,10 @@ export const usersRepo = {
       emailVerified: "email_verified",
       phoneVerified: "phone_verified",
       trustScore: "trust_score",
+      role: "role",
       isBlocked: "is_blocked",
       blockedReason: "blocked_reason",
+      accountPurpose: "account_purpose",
     };
 
     const payload = Object.fromEntries(

@@ -8,9 +8,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const certificate = certificateRepo.findById(id);
+  const certificate = await certificateRepo.findById(id);
   if (!certificate) return jsonError("Certificate not found.", 404);
 
-  const listing = listingsRepo.findById(certificate.listingId);
+  const listing = await listingsRepo.findById(certificate.listingId);
   return jsonOk({ certificate, listing });
 }

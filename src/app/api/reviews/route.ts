@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
   const sellerId = req.nextUrl.searchParams.get("sellerId");
   if (!sellerId) return jsonError("sellerId query parameter is required.", 400);
 
-  const reviews = reviewsRepo.listForSeller(sellerId);
-  const summary = reviewsRepo.averageForSeller(sellerId);
+  const reviews = await reviewsRepo.listForSeller(sellerId);
+  const summary = await reviewsRepo.averageForSeller(sellerId);
   return jsonOk({ reviews, summary });
 }
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       return jsonError("You can't review yourself.", 400);
     }
 
-    const review = reviewsRepo.create({ authorId: user.id, ...parsed.data });
+    const review = await reviewsRepo.create({ authorId: user.id, ...parsed.data });
     return jsonOk({ review }, 201);
   } catch (err) {
     if (isAuthError(err)) return jsonError(err.message, 401);

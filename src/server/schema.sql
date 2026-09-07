@@ -1,6 +1,6 @@
 -- ============================================================================
 -- PHONEBAY SUPABASE DATABASE SCHEMA
--- FIXED VERSION
+-- UPDATED VERSION - WITH account_purpose FIELD
 -- ============================================================================
 
 -- ============================================================================
@@ -19,6 +19,14 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 DO $$
 BEGIN
   CREATE TYPE role_enum AS ENUM ('ADMIN', 'SELLER', 'SHOP', 'USER');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END
+$$;
+
+DO $$
+BEGIN
+  CREATE TYPE account_purpose_enum AS ENUM ('buyer', 'seller', 'both', 'shop');
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END
@@ -69,7 +77,7 @@ $$;
 
 
 -- ============================================================================
--- SECTION 3: USERS
+-- SECTION 3: USERS - UPDATED WITH account_purpose
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.users (
@@ -82,6 +90,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   city TEXT,
 
   role role_enum NOT NULL DEFAULT 'USER',
+  account_purpose account_purpose_enum,
 
   shop_id UUID,
 
@@ -359,15 +368,17 @@ CREATE TABLE IF NOT EXISTS public.verification_requests (
     REFERENCES public.users(id)
     ON DELETE CASCADE,
 
-  verification_type TEXT NOT NULL,
+  listing_id TEXT NOT NULL
+    REFERENCES public.listings(id)
+    ON DELETE CASCADE,
 
   status verification_status NOT NULL DEFAULT 'pending',
 
-  document_urls TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  requested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP WITH TIME ZONE,
 
-  rejected_reason TEXT,
+  score NUMERIC,
 
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -379,112 +390,22 @@ CREATE TABLE IF NOT EXISTS public.verification_requests (
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id TEXT PRIMARY KEY,
 
-  user_id UUID
+  admin_id UUID NOT NULL
     REFERENCES public.users(id)
-    ON DELETE SET NULL,
+    ON DELETE CASCADE,
 
   action TEXT NOT NULL,
   entity_type TEXT NOT NULL,
-  entity_id TEXT,
+  entity_id TEXT NOT NULL,
 
-  old_values JSONB,
-  new_values JSONB,
-
-  ip_address TEXT,
+  changes JSONB,
 
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 
 -- ============================================================================
--- SECTION 15: INDEXES
--- ============================================================================
-
-CREATE INDEX IF NOT EXISTS idx_users_shop_id
-  ON public.users(shop_id);
-
-CREATE INDEX IF NOT EXISTS idx_users_email
-  ON public.users(email);
-
-CREATE INDEX IF NOT EXISTS idx_users_role
-  ON public.users(role);
-
-
-CREATE INDEX IF NOT EXISTS idx_shops_owner_id
-  ON public.shops(owner_id);
-
-CREATE INDEX IF NOT EXISTS idx_shops_verification_status
-  ON public.shops(verification_status);
-
-
-CREATE INDEX IF NOT EXISTS idx_listings_seller_id
-  ON public.listings(seller_id);
-
-CREATE INDEX IF NOT EXISTS idx_listings_status
-  ON public.listings(status);
-
-CREATE INDEX IF NOT EXISTS idx_listings_city
-  ON public.listings(city);
-
-CREATE INDEX IF NOT EXISTS idx_listings_brand
-  ON public.listings(brand);
-
-CREATE INDEX IF NOT EXISTS idx_listings_model
-  ON public.listings(model);
-
-CREATE INDEX IF NOT EXISTS idx_listings_price
-  ON public.listings(price);
-
-
-CREATE INDEX IF NOT EXISTS idx_orders_buyer_id
-  ON public.orders(buyer_id);
-
-CREATE INDEX IF NOT EXISTS idx_orders_seller_id
-  ON public.orders(seller_id);
-
-CREATE INDEX IF NOT EXISTS idx_orders_listing_id
-  ON public.orders(listing_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_conversations_p1
-  ON public.conversations(participant_1_id);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_p2
-  ON public.conversations(participant_2_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
-  ON public.messages(conversation_id);
-
-CREATE INDEX IF NOT EXISTS idx_messages_sender_id
-  ON public.messages(sender_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_id
-  ON public.reviews(reviewer_id);
-
-CREATE INDEX IF NOT EXISTS idx_reviews_reviewed_user_id
-  ON public.reviews(reviewed_user_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_certificates_listing_id
-  ON public.certificates(listing_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_testing_records_listing_id
-  ON public.testing_records(listing_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_verification_requests_user_id
-  ON public.verification_requests(user_id);
-
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id
-  ON public.audit_logs(user_id);
-
-
--- ============================================================================
--- SECTION 16: RLS
+-- SECTION 15: ROW LEVEL SECURITY (RLS) ENABLE
 -- ============================================================================
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -501,17 +422,17 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================================
--- SECTION 17: RLS POLICIES
+-- SECTION 16: ROW LEVEL SECURITY POLICIES
 -- ============================================================================
 
 -- USERS
 
-DROP POLICY IF EXISTS "Users can view public profiles" ON public.users;
+DROP POLICY IF EXISTS "Users can view own profile" ON public.users;
 
-CREATE POLICY "Users can view public profiles"
+CREATE POLICY "Users can view own profile"
 ON public.users
 FOR SELECT
-USING (true);
+USING (auth.uid() = id);
 
 
 DROP POLICY IF EXISTS "Users can update own profile" ON public.users;
@@ -522,12 +443,19 @@ FOR UPDATE
 USING (auth.uid() = id);
 
 
-DROP POLICY IF EXISTS "Users can delete own profile" ON public.users;
+DROP POLICY IF EXISTS "Admins can view all users" ON public.users;
 
-CREATE POLICY "Users can delete own profile"
+CREATE POLICY "Admins can view all users"
 ON public.users
-FOR DELETE
-USING (auth.uid() = id);
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.users
+    WHERE public.users.id = auth.uid()
+      AND public.users.role = 'ADMIN'
+  )
+);
 
 
 -- SHOPS
@@ -537,12 +465,12 @@ DROP POLICY IF EXISTS "Anyone can view active shops" ON public.shops;
 CREATE POLICY "Anyone can view active shops"
 ON public.shops
 FOR SELECT
-USING (is_active = true);
+USING (is_active = true OR auth.uid() = owner_id);
 
 
-DROP POLICY IF EXISTS "Shop owner can update own shop" ON public.shops;
+DROP POLICY IF EXISTS "Shop owners can update own shop" ON public.shops;
 
-CREATE POLICY "Shop owner can update own shop"
+CREATE POLICY "Shop owners can update own shop"
 ON public.shops
 FOR UPDATE
 USING (auth.uid() = owner_id);
@@ -757,7 +685,7 @@ USING (
 
 
 -- ============================================================================
--- SECTION 18: UPDATED_AT FUNCTION
+-- SECTION 17: UPDATED_AT FUNCTION
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -772,7 +700,7 @@ $$;
 
 
 -- ============================================================================
--- SECTION 19: UPDATED_AT TRIGGERS
+-- SECTION 18: UPDATED_AT TRIGGERS
 -- ============================================================================
 
 DROP TRIGGER IF EXISTS update_users_updated_at
@@ -830,7 +758,7 @@ EXECUTE FUNCTION public.update_updated_at_column();
 
 
 -- ============================================================================
--- SECTION 20: AUTH -> PUBLIC.USERS TRIGGER
+-- SECTION 19: AUTH -> PUBLIC.USERS TRIGGER
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -847,6 +775,7 @@ BEGIN
     full_name,
     phone,
     role,
+    account_purpose,
     email_verified
   )
   VALUES (
@@ -859,6 +788,7 @@ BEGIN
     ),
     NEW.raw_user_meta_data->>'phone',
     'USER',
+    NEW.raw_user_meta_data->>'account_purpose',
     NEW.email_confirmed_at IS NOT NULL
   )
 
@@ -883,14 +813,14 @@ EXECUTE FUNCTION public.handle_new_user();
 
 
 -- ============================================================================
--- SECTION 21: REFRESH POSTGREST SCHEMA CACHE
+-- SECTION 20: REFRESH POSTGREST SCHEMA CACHE
 -- ============================================================================
 
 NOTIFY pgrst, 'reload schema';
 
 
 -- ============================================================================
--- SECTION 22: VERIFICATION
+-- SECTION 21: VERIFICATION
 -- ============================================================================
 
 SELECT

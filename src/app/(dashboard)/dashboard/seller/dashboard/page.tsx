@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { formatPKR } from "@/lib/utils";
 import { getCurrentUser } from "@/server/http";
-import { db } from "@/server/db";
+import { getDb, queryRows } from "@/server/db";
 import { listingsRepo } from "@/server/repositories/listings";
 
 export const metadata: Metadata = {
@@ -41,12 +41,20 @@ export default async function SellerDashboardPage() {
     );
   }
 
-  const allListings = listingsRepo.list({ sellerId: user.id, sort: "newest" });
+  const allListings = await listingsRepo.list({ sellerId: user.id, sort: "newest" });
   const listings = allListings.slice(0, 3);
   const activeListings = allListings.filter((listing) => listing.status === "active");
-  const soldCount = (db.prepare("SELECT COUNT(*) as count FROM orders o JOIN listings l ON l.id = o.listing_id WHERE l.seller_id = ?").get(user.id) as { count: number }).count;
-  const messageCount = (db.prepare(`SELECT COUNT(*) as count FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.seller_id = ?`).get(user.id) as { count: number }).count;
-  const verifiedSales = (db.prepare(`SELECT COUNT(*) as count FROM orders o JOIN listings l ON l.id = o.listing_id WHERE l.seller_id = ? AND l.verified = 1`).get(user.id) as { count: number }).count;
+  const db = getDb();
+  const [ordersResult, messagesResult, verifiedOrdersResult] = await Promise.all([
+    db.from("orders").select("id, listings!inner(seller_id)", { count: "exact", head: true }).eq("listings.seller_id", user.id),
+    db.from("messages").select("id, conversations!inner(seller_id)", { count: "exact", head: true }).eq("conversations.seller_id", user.id),
+    db.from("orders").select("id, listings!inner(seller_id, verified)", { count: "exact", head: true })
+      .eq("listings.seller_id", user.id)
+      .eq("listings.verified", true),
+  ]);
+  const soldCount = ordersResult.count ?? 0;
+  const messageCount = messagesResult.count ?? 0;
+  const verifiedSales = verifiedOrdersResult.count ?? 0;
   const totalViews = allListings.reduce((sum, listing) => sum + listing.views, 0);
   const totalOffers = soldCount;
 

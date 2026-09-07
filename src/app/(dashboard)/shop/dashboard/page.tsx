@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { verificationJobs } from "@/data/verification";
 import { formatPKR } from "@/lib/utils";
 import { getCurrentUser } from "@/server/http";
-import { db } from "@/server/db";
+import { getDb } from "@/server/db";
 import { verificationRepo } from "@/server/repositories/verification";
 
 export const metadata: Metadata = {
@@ -44,10 +44,16 @@ export default async function ShopDashboardPage() {
     );
   }
 
-  const pendingTests = verificationRepo.listPending().length;
-  const jobs = verificationRepo.listPending().slice(0, 4);
-  const revenue = (db.prepare("SELECT COALESCE(SUM(price), 0) as total FROM orders o JOIN listings l ON l.id = o.listing_id WHERE l.seller_id = ?").get(user.id) as { total: number }).total;
-  const totalJobs = (db.prepare("SELECT COUNT(*) as count FROM verification_requests vr JOIN listings l ON l.id = vr.listing_id WHERE l.seller_id = ?").get(user.id) as { count: number }).count;
+  const pendingVerificationJobs = await verificationRepo.listPending();
+  const pendingTests = pendingVerificationJobs.length;
+  const jobs = pendingVerificationJobs.slice(0, 4);
+  const db = getDb();
+  const [revenueResult, jobsResult] = await Promise.all([
+    db.from("orders").select("price, listings!inner(seller_id)").eq("listings.seller_id", user.id),
+    db.from("verification_requests").select("id, listings!inner(seller_id)", { count: "exact", head: true }).eq("listings.seller_id", user.id),
+  ]);
+  const revenue = (revenueResult.data ?? []).reduce((sum, row) => sum + Number(row.price ?? 0), 0);
+  const totalJobs = jobsResult.count ?? 0;
 
   const summary = [
     { label: "Today's Jobs", value: Math.max(1, Math.min(9, totalJobs)), icon: ClipboardCheck },

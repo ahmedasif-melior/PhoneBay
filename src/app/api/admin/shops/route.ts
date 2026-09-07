@@ -16,7 +16,7 @@ export async function GET() {
     const { user: adminUser } = await requireAdmin();
 
     // Fetch all shops with their pending status
-    const shops = shopsRepo.findAll();
+    const shops = await shopsRepo.findAll();
 
     return jsonOk({
       shops: shops.map((shop) => ({
@@ -50,26 +50,15 @@ export async function POST(req: NextRequest) {
 
     const { shopId, status, notes } = parsed.data;
 
-    const shop = shopsRepo.findById(shopId);
+    const shop = await shopsRepo.findById(shopId);
     if (!shop) {
       return jsonError("Shop not found", 404);
     }
 
     // Update shop verification status
-    const updatedShop = shopsRepo.updateVerificationStatus(shopId, status, adminUser.id, notes);
+    const updatedShop = await shopsRepo.updateVerificationStatus(shopId, status, adminUser.id, notes);
 
-    // If approved, update associated users with SHOP role
-    if (status === "approved") {
-      const db = require("@/server/db").db as any;
-      const shopUsers = db
-        .prepare("SELECT * FROM users WHERE shop_id = ?")
-        .all(shopId) as any[];
 
-      for (const shopUser of shopUsers) {
-        // User is already SHOP role from creation, just ensure shop_id is linked
-        usersRepo.update(shopUser.id, {});
-      }
-    }
 
     auditLogsRepo.log({
       adminId: adminUser.id,

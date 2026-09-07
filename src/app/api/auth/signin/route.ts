@@ -7,6 +7,10 @@ import {
   toPublicUser,
 } from "@/server/repositories/users";
 import { getSupabaseServer } from "@/server/supabase";
+import {
+  ensureAdminAccount,
+  isConfiguredAdminEmail,
+} from "@/server/ensure-admin";
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +26,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { email, password } = parsed.data;
+    const { email, password, expectedRole } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
 
     const supabase = await getSupabaseServer();
@@ -34,11 +38,25 @@ export async function POST(req: NextRequest) {
      * and @supabase/ssr writes the session cookies through
      * the cookies adapter above.
      */
-    const { data, error } =
+    let { data, error } =
       await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
+
+    if ((error || !data.user) && isConfiguredAdminEmail(normalizedEmail)) {
+      try {
+        await ensureAdminAccount();
+        const retried = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
+        data = retried.data;
+        error = retried.error;
+      } catch (provisionError) {
+        console.error("Admin account provision failed:", provisionError);
+      }
+    }
 
     if (error || !data.user) {
       console.error(
@@ -86,6 +104,16 @@ export async function POST(req: NextRequest) {
         "Your account is blocked.",
         403,
       );
+    }
+
+    if (expectedRole === "ADMIN" && user.role !== "ADMIN") {
+      await supabase.auth.signOut();
+      return jsonError("Admin access required.", 403);
+    }
+
+    if (expectedRole === "SHOP" && user.role !== "SHOP" && user.role !== "ADMIN") {
+      await supabase.auth.signOut();
+      return jsonError("Shop access required.", 403);
     }
 
     /*

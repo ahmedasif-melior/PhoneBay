@@ -124,6 +124,19 @@ export const conversationsRepo = {
 
     return rows.map(mapConversation);
   },
+
+  async listAll() {
+    const rows = await queryRows<C>(
+      getAdminDb()
+        .from("conversations")
+        .select("*")
+        .order("updated_at", {
+          ascending: false,
+        }),
+    );
+
+    return rows.map(mapConversation);
+  },
 };
 
 export const messagesRepo = {

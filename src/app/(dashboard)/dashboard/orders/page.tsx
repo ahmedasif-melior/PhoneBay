@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { formatPKR, formatDate } from "@/lib/utils";
 import { getCurrentUser } from "@/server/http";
-import { db } from "@/server/db";
+import { getSupabaseServer } from "@/server/supabase"; // import your supabase client
 
 export const metadata: Metadata = { title: "Orders" };
 
@@ -26,14 +26,59 @@ function imageForModel(model: string): string {
   return "/images/phones/iphone-15.webp";
 }
 
+// Define the shape of the raw data from Supabase
+type OrderRaw = {
+  id: string;
+  price: number;
+  status: keyof typeof statusConfig;
+  created_at: string;
+  listings: {
+    model: string;
+    users: { full_name: string }[];
+  }[]; // always an array, even with !inner
+};
+
 export default async function OrdersPage() {
   const user = await getCurrentUser();
   if (!user) return null;
-  const orders = db.prepare(
-    `SELECT o.id, o.price, o.status, o.created_at, l.model, u.full_name AS seller
-     FROM orders o JOIN listings l ON l.id = o.listing_id JOIN users u ON u.id = l.seller_id
-     WHERE o.buyer_id = ? ORDER BY o.created_at DESC`
-  ).all(user.id) as { id: string; price: number; status: keyof typeof statusConfig; created_at: string; model: string; seller: string }[];
+
+  const supabase = await getSupabaseServer();
+
+  // Execute the query directly, handle errors
+  const { data, error } = await supabase
+    .from("orders")
+    .select(`
+      id,
+      price,
+      status,
+      created_at,
+      listings!inner (
+        model,
+        users!inner (
+          full_name
+        )
+      )
+    `)
+    .eq("buyer_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch orders:", error);
+    return <div>Error loading orders.</div>;
+  }
+
+  // `data` is typed as any by Supabase; we cast it to our type
+  const rows = (data || []) as OrderRaw[];
+
+  // Map to simpler shape for rendering
+  const orders = rows.map((row) => ({
+    id: row.id,
+    price: row.price,
+    status: row.status,
+    created_at: row.created_at,
+    model: row.listings[0]?.model ?? "Phone",
+    seller: row.listings[0]?.users[0]?.full_name ?? "Seller",
+  }));
 
   return (
     <div>
@@ -41,13 +86,23 @@ export default async function OrdersPage() {
       <p className="text-ink-soft mt-1">Track your purchases and their delivery status.</p>
 
       <div className="mt-7 flex flex-col gap-4">
-        {orders.length === 0 && <Card><p className="text-sm text-ink-faint">You have no orders yet.</p></Card>}
+        {orders.length === 0 && (
+          <Card>
+            <p className="text-sm text-ink-faint">You have no orders yet.</p>
+          </Card>
+        )}
         {orders.map((order) => {
           const cfg = statusConfig[order.status];
           return (
             <Card key={order.id} className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="h-16 w-16 rounded-[var(--pb-radius-sm)] bg-bg border border-border flex items-center justify-center shrink-0">
-                <Image src={imageForModel(order.model)} alt="" width={48} height={48} className="object-contain h-4/5 w-4/5" />
+              <div className="h-16 w-16 rounded-(--pb-radius-sm) bg-bg border border-border flex items-center justify-center shrink-0">
+                <Image
+                  src={imageForModel(order.model)}
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="object-contain h-4/5 w-4/5"
+                />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-ink">{order.model}</p>
@@ -56,7 +111,6 @@ export default async function OrdersPage() {
                 </p>
               </div>
               <div className="flex items-center gap-6 sm:gap-8">
-                <p className="font-medium text-ink">{order.model}</p>
                 <p className="font-data font-semibold text-ink">{formatPKR(order.price)}</p>
                 <Badge tone={cfg.tone} icon={<cfg.icon className="h-3 w-3" />}>
                   {cfg.label}
