@@ -105,6 +105,8 @@ export interface OrderRecord {
 export interface ConversationRecord {
   id: string;
   listingId: string | null;
+  participant1Id?: string;
+  participant2Id?: string;
   buyerId: string;
   sellerId: string;
   createdAt: string;

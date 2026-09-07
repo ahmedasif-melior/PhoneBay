@@ -21,6 +21,7 @@ export function BuyBox({ phone }: { phone: Phone }) {
   const [messageText, setMessageText] = React.useState(`Hi, is the ${phone.model} still available?`);
   const [orderError, setOrderError] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  const [createdConversationId, setCreatedConversationId] = React.useState<string | null>(null);
 
   const handleSaveToggle = async () => {
     setSavePending(true);
@@ -74,6 +75,10 @@ export function BuyBox({ phone }: { phone: Phone }) {
       });
 
       if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        if (data.conversation?.id) {
+          setCreatedConversationId(data.conversation.id);
+        }
         setMessageSent(true);
         setMessageText("");
       } else {
@@ -89,8 +94,12 @@ export function BuyBox({ phone }: { phone: Phone }) {
   const handleViewMessages = () => {
     setMessageOpen(false);
     setMessageSent(false);
-    // Navigate to messages dashboard
-    router.push("/dashboard/messages");
+    // Navigate to messages dashboard with the active conversation open
+    if (createdConversationId) {
+      router.push(`/dashboard/messages?id=${createdConversationId}`);
+    } else {
+      router.push("/dashboard/messages");
+    }
   };
 
   return (
@@ -228,7 +237,7 @@ export function BuyBox({ phone }: { phone: Phone }) {
           }}
         >
           <p className="text-sm text-ink-soft">
-            Let us know what's wrong with this listing and our team will review it.
+            Let us know what&apos;s wrong with this listing and our team will review it.
           </p>
           <textarea
             required

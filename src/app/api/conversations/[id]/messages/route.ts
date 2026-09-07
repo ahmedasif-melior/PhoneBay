@@ -46,7 +46,9 @@ export async function GET(
 
     const isParticipant =
       conversation.buyerId === user.id ||
-      conversation.sellerId === user.id;
+      conversation.sellerId === user.id ||
+      conversation.participant1Id === user.id ||
+      conversation.participant2Id === user.id;
     const isAdmin = isAdminRole(user.role);
 
     if (!isParticipant && !isAdmin) {
@@ -123,7 +125,9 @@ export async function POST(
 
     const isParticipant =
       conversation.buyerId === user.id ||
-      conversation.sellerId === user.id;
+      conversation.sellerId === user.id ||
+      conversation.participant1Id === user.id ||
+      conversation.participant2Id === user.id;
 
     if (!isParticipant) {
       return jsonError(

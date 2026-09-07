@@ -560,6 +560,10 @@ FOR SELECT
 USING (
   auth.uid() = participant_1_id
   OR auth.uid() = participant_2_id
+  OR EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'ADMIN'
+  )
 );
 
 
@@ -569,6 +573,17 @@ CREATE POLICY "Users can create conversations"
 ON public.conversations
 FOR INSERT
 WITH CHECK (
+  auth.uid() = participant_1_id
+  OR auth.uid() = participant_2_id
+);
+
+
+DROP POLICY IF EXISTS "Users can update own conversations" ON public.conversations;
+
+CREATE POLICY "Users can update own conversations"
+ON public.conversations
+FOR UPDATE
+USING (
   auth.uid() = participant_1_id
   OR auth.uid() = participant_2_id
 );
@@ -589,6 +604,10 @@ USING (
     WHERE participant_1_id = auth.uid()
        OR participant_2_id = auth.uid()
   )
+  OR EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'ADMIN'
+  )
 );
 
 
@@ -599,6 +618,27 @@ ON public.messages
 FOR INSERT
 WITH CHECK (
   auth.uid() = sender_id
+  AND conversation_id IN (
+    SELECT id
+    FROM public.conversations
+    WHERE participant_1_id = auth.uid()
+       OR participant_2_id = auth.uid()
+  )
+);
+
+
+DROP POLICY IF EXISTS "Users can update own messages" ON public.messages;
+
+CREATE POLICY "Users can update own messages"
+ON public.messages
+FOR UPDATE
+USING (
+  conversation_id IN (
+    SELECT id
+    FROM public.conversations
+    WHERE participant_1_id = auth.uid()
+       OR participant_2_id = auth.uid()
+  )
 );
 
 
@@ -813,7 +853,36 @@ EXECUTE FUNCTION public.handle_new_user();
 
 
 -- ============================================================================
--- SECTION 20: REFRESH POSTGREST SCHEMA CACHE
+-- SECTION 20: SUPABASE REALTIME CONFIGURATION
+-- Enables live message and conversation streaming over WebSockets
+-- ============================================================================
+
+ALTER TABLE public.conversations REPLICA IDENTITY FULL;
+ALTER TABLE public.messages REPLICA IDENTITY FULL;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'conversations'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'messages'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+    END IF;
+  END IF;
+END
+$$;
+
+
+-- ============================================================================
+-- SECTION 21: REFRESH POSTGREST SCHEMA CACHE
 -- ============================================================================
 
 NOTIFY pgrst, 'reload schema';

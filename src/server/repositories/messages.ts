@@ -31,6 +31,8 @@ type M = {
 const mapConversation = (r: C): ConversationRecord => ({
   id: r.id,
   listingId: r.listing_id,
+  participant1Id: r.participant_1_id,
+  participant2Id: r.participant_2_id,
   buyerId: r.participant_1_id,
   sellerId: r.participant_2_id,
   createdAt: r.created_at,
@@ -45,6 +47,33 @@ const mapMessage = (r: M): MessageRecord => ({
   read: r.read_at !== null,
   createdAt: r.created_at,
 });
+
+export interface EnrichedConversation extends ConversationRecord {
+  otherParty: {
+    id: string;
+    fullName: string;
+    avatarUrl: string | null;
+    phoneNumber: string | null;
+    role?: string;
+  };
+  listing: {
+    id: string;
+    title: string;
+    brand: string;
+    model: string;
+    storage: string;
+    price: number;
+    imageUrl: string;
+    status: string;
+    city: string;
+  } | null;
+  participants: {
+    participant1: { id: string; fullName: string } | null;
+    participant2: { id: string; fullName: string } | null;
+  };
+  lastMessage: MessageRecord | null;
+  unreadCount: number;
+}
 
 export const conversationsRepo = {
   async findOrCreate(i: {
@@ -136,6 +165,229 @@ export const conversationsRepo = {
     );
 
     return rows.map(mapConversation);
+  },
+
+  /**
+   * Efficiently loads and enriches conversations using batch queries.
+   * Prevents N+1 database roundtrips.
+   */
+  async listEnrichedForUser(
+    userId: string,
+    isAdmin = false,
+  ): Promise<EnrichedConversation[]> {
+    const db = getAdminDb();
+
+    let query = db
+      .from("conversations")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (!isAdmin) {
+      query = query.or(
+        `participant_1_id.eq.${userId},participant_2_id.eq.${userId}`,
+      );
+    }
+
+    const conversationRows = await queryRows<C>(query);
+    if (!conversationRows.length) {
+      return [];
+    }
+
+    const conversationIds = conversationRows.map((c) => c.id);
+    const participantIds = Array.from(
+      new Set(
+        conversationRows.flatMap((c) => [
+          c.participant_1_id,
+          c.participant_2_id,
+        ]),
+      ),
+    );
+    const listingIds = Array.from(
+      new Set(
+        conversationRows
+          .map((c) => c.listing_id)
+          .filter(
+            (id): id is string =>
+              typeof id === "string" && id.length > 0,
+          ),
+      ),
+    );
+
+    // Parallel batch fetch for messages, users, and listings
+    const [messagesRows, usersRows, listingsRows] =
+      await Promise.all([
+        queryRows<M>(
+          db
+            .from("messages")
+            .select("*")
+            .in("conversation_id", conversationIds)
+            .order("created_at", { ascending: true }),
+        ),
+        queryRows<{
+          id: string;
+          full_name: string;
+          avatar_url: string | null;
+          phone: string | null;
+          role: string;
+        }>(
+          db
+            .from("users")
+            .select("id, full_name, avatar_url, phone, role")
+            .in("id", participantIds),
+        ),
+        listingIds.length > 0
+          ? queryRows<{
+              id: string;
+              brand: string;
+              model: string;
+              storage: string;
+              color: string | null;
+              price: number;
+              image_urls: string[] | null;
+              status: string;
+              city: string;
+            }>(
+              db
+                .from("listings")
+                .select(
+                  "id, brand, model, storage, color, price, image_urls, status, city",
+                )
+                .in("id", listingIds),
+            )
+          : Promise.resolve([]),
+      ]);
+
+    // Build lookup maps
+    const messagesByConversation = new Map<
+      string,
+      MessageRecord[]
+    >();
+    for (const m of messagesRows) {
+      const list =
+        messagesByConversation.get(m.conversation_id) ?? [];
+      list.push(mapMessage(m));
+      messagesByConversation.set(m.conversation_id, list);
+    }
+
+    const usersMap = new Map<
+      string,
+      {
+        id: string;
+        fullName: string;
+        avatarUrl: string | null;
+        phoneNumber: string | null;
+        role: string;
+      }
+    >();
+    for (const u of usersRows) {
+      usersMap.set(u.id, {
+        id: u.id,
+        fullName: u.full_name || "PhoneBay User",
+        avatarUrl: u.avatar_url,
+        phoneNumber: u.phone,
+        role: u.role,
+      });
+    }
+
+    const listingsMap = new Map<
+      string,
+      {
+        id: string;
+        title: string;
+        brand: string;
+        model: string;
+        storage: string;
+        price: number;
+        imageUrl: string;
+        status: string;
+        city: string;
+      }
+    >();
+    for (const l of listingsRows) {
+      const fallback = "/images/phones/iphone-15.webp";
+      const imageUrl =
+        Array.isArray(l.image_urls) && l.image_urls.length > 0
+          ? l.image_urls[0]
+          : fallback;
+
+      listingsMap.set(l.id, {
+        id: l.id,
+        title: `${l.brand} ${l.model} · ${l.storage}`,
+        brand: l.brand,
+        model: l.model,
+        storage: l.storage,
+        price: l.price,
+        imageUrl,
+        status: l.status,
+        city: l.city,
+      });
+    }
+
+    return conversationRows.map((r) => {
+      const conversation = mapConversation(r);
+      const conversationMessages =
+        messagesByConversation.get(r.id) ?? [];
+      const otherUserId =
+        r.participant_1_id === userId
+          ? r.participant_2_id
+          : r.participant_1_id;
+
+      const otherUser = usersMap.get(otherUserId);
+      const p1 = usersMap.get(r.participant_1_id);
+      const p2 = usersMap.get(r.participant_2_id);
+      const listing = r.listing_id
+        ? listingsMap.get(r.listing_id) ?? null
+        : null;
+
+      const lastMessage =
+        conversationMessages.length > 0
+          ? conversationMessages[
+              conversationMessages.length - 1
+            ]
+          : null;
+
+      const unreadCount = conversationMessages.filter(
+        (m) => !m.read && m.senderId !== userId,
+      ).length;
+
+      const otherParty = otherUser ?? {
+        id: otherUserId,
+        fullName:
+          p1 && p2
+            ? `${p1.fullName} ↔ ${p2.fullName}`
+            : "PhoneBay User",
+        avatarUrl: null,
+        phoneNumber: null,
+        role: "USER",
+      };
+
+      return {
+        ...conversation,
+        otherParty,
+        listing,
+        participants: {
+          participant1: p1
+            ? { id: p1.id, fullName: p1.fullName }
+            : null,
+          participant2: p2
+            ? { id: p2.id, fullName: p2.fullName }
+            : null,
+        },
+        lastMessage,
+        unreadCount,
+      };
+    });
+  },
+
+  /**
+   * Retrieve single enriched conversation.
+   */
+  async getEnrichedById(
+    conversationId: string,
+    userId: string,
+  ): Promise<EnrichedConversation | null> {
+    const list = await this.listEnrichedForUser(userId, true);
+    return list.find((c) => c.id === conversationId) ?? null;
   },
 };
 

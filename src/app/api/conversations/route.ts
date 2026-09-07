@@ -28,68 +28,24 @@ import { usersRepo } from "@/server/repositories/users";
  *
  * Uses cache: "no-store" to ensure fresh data.
  */
-// GET /api/conversations
+/**
+ * GET /api/conversations
+ *
+ * Returns all conversations for the authenticated user.
+ * Fast, batch-enriched with:
+ * - otherParty (name, avatar, phone number)
+ * - listing (phone title, brand, model, price, image)
+ * - lastMessage
+ * - unreadCount
+ */
 export async function GET() {
   try {
     const { user } = await requireUser();
 
     const isAdmin = isAdminRole(user.role);
-    const conversations = isAdmin
-      ? await conversationsRepo.listAll()
-      : await conversationsRepo.listForUser(user.id);
-
-    const enriched = await Promise.all(
-      conversations.map(async (conversation) => {
-        const messages = await messagesRepo.listByConversation(conversation.id);
-
-        const otherUserId =
-          conversation.buyerId === user.id
-            ? conversation.sellerId
-            : conversation.sellerId === user.id
-              ? conversation.buyerId
-              : conversation.buyerId;
-
-        const [other, buyer, seller] = await Promise.all([
-          usersRepo.findById(otherUserId),
-          usersRepo.findById(conversation.buyerId),
-          usersRepo.findById(conversation.sellerId),
-        ]);
-
-        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-        const unreadCount = messages.filter(
-          (message) => !message.read && message.senderId !== user.id,
-        ).length;
-
-        // Build otherParty safely
-        let otherParty = null;
-        if (other) {
-          otherParty = {
-            id: other.id,
-            fullName: other.fullName,
-            avatarUrl: other.avatarUrl,
-            phoneNumber: other.phone ?? null,
-          };
-        } else if (buyer && seller) {
-          // If 'other' user not found, fallback to buyer/seller names
-          otherParty = {
-            id: otherUserId,
-            fullName: `${buyer.fullName} ↔ ${seller.fullName}`,
-            avatarUrl: null,
-            phoneNumber: buyer.phone ?? seller.phone ?? null,
-          };
-        }
-
-        return {
-          ...conversation,
-          otherParty,
-          participants: {
-            buyer: buyer ? { id: buyer.id, fullName: buyer.fullName } : null,
-            seller: seller ? { id: seller.id, fullName: seller.fullName } : null,
-          },
-          lastMessage,
-          unreadCount,
-        };
-      }),
+    const enriched = await conversationsRepo.listEnrichedForUser(
+      user.id,
+      isAdmin,
     );
 
     return jsonOk({ conversations: enriched });
@@ -118,8 +74,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => null);
 
-    const parsed =
-      sendMessageSchema.safeParse(body);
+    const parsed = sendMessageSchema.safeParse(body);
 
     if (!parsed.success) {
       return jsonError(
@@ -129,25 +84,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const {
-      sellerId,
-      listingId,
-      text,
-    } = parsed.data;
+    const { sellerId, listingId, text } = parsed.data;
 
     if (sellerId === user.id) {
-      return jsonError(
-        "You can't message yourself.",
-        400,
-      );
+      return jsonError("You can't message yourself.", 400);
     }
 
-    const conversation =
-      await conversationsRepo.findOrCreate({
-        listingId: listingId ?? null,
-        buyerId: user.id,
-        sellerId,
-      });
+    const conversation = await conversationsRepo.findOrCreate({
+      listingId: listingId ?? null,
+      buyerId: user.id,
+      sellerId,
+    });
 
     const message = await messagesRepo.send({
       conversationId: conversation.id,
@@ -155,9 +102,15 @@ export async function POST(req: NextRequest) {
       text,
     });
 
+    // Retrieve enriched conversation so client has full party and listing details immediately
+    const enriched = await conversationsRepo.getEnrichedById(
+      conversation.id,
+      user.id,
+    );
+
     return jsonOk(
       {
-        conversation,
+        conversation: enriched ?? conversation,
         message,
       },
       201,
@@ -167,15 +120,10 @@ export async function POST(req: NextRequest) {
       return jsonError(err.message, 401);
     }
 
-    console.error(
-      "POST /api/conversations failed:",
-      err,
-    );
+    console.error("POST /api/conversations failed:", err);
 
     return jsonError(
-      err instanceof Error
-        ? err.message
-        : "Failed to send message.",
+      err instanceof Error ? err.message : "Failed to send message.",
       500,
     );
   }
