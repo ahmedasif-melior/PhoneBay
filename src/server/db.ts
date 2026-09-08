@@ -25,6 +25,21 @@ function getSupabaseConfig() {
  * Public Supabase client.
  *
  * Uses the publishable key and therefore respects RLS.
+ *
+ * IMPORTANT:
+ * This client does NOT automatically inherit the authenticated
+ * user's server-side session/cookies.
+ *
+ * Therefore, server-side queries that rely on:
+ *
+ *   auth.uid()
+ *
+ * should NOT use this client unless an authenticated access token
+ * is explicitly attached to the client.
+ *
+ * For protected server operations that already call requireUser(),
+ * use getAdminDb() after performing the application's authorization
+ * checks.
  */
 export function getDb(): SupabaseClient {
   const { url, key } = getSupabaseConfig();
@@ -48,7 +63,12 @@ export function getDb(): SupabaseClient {
  *
  * IMPORTANT:
  * This client uses the public/publishable key and is subject to RLS.
- * Do not use it for trusted admin/server operations.
+ *
+ * It is NOT request-aware and does not automatically contain the
+ * currently authenticated user's Supabase access token.
+ *
+ * Do not use this client for protected server operations that expect
+ * auth.uid() to identify the current user.
  */
 export const db = getDb();
 
@@ -56,6 +76,22 @@ export const db = getDb();
  * Server-only Supabase client.
  *
  * Uses SUPABASE_SECRET_KEY and bypasses RLS.
+ *
+ * IMPORTANT:
+ * Because this client bypasses RLS, callers MUST perform their own
+ * authentication and authorization checks before using it.
+ *
+ * Typical usage:
+ *
+ *   const { user } = await requireUser();
+ *   const db = getAdminDb();
+ *
+ *   await db
+ *     .from("saved_items")
+ *     .insert({
+ *       user_id: user.id,
+ *       ...
+ *     });
  *
  * NEVER expose this client or the secret key to browser/client code.
  */

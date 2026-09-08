@@ -1,6 +1,6 @@
 -- ============================================================================
 -- PHONEBAY SUPABASE DATABASE SCHEMA
--- UPDATED VERSION - WITH account_purpose FIELD
+-- UPDATED VERSION - WITH account_purpose FIELD + RLS RECURSION FIX
 -- ============================================================================
 
 -- ============================================================================
@@ -316,17 +316,9 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 
 CREATE TABLE IF NOT EXISTS public.saved_listings (
   id TEXT PRIMARY KEY,
-
-  user_id UUID NOT NULL
-    REFERENCES public.users(id)
-    ON DELETE CASCADE,
-
-  listing_id TEXT NOT NULL
-    REFERENCES public.listings(id)
-    ON DELETE CASCADE,
-
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  listing_id TEXT NOT NULL REFERENCES public.listings(id) ON DELETE CASCADE,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
   UNIQUE (user_id, listing_id)
 );
 
@@ -378,9 +370,11 @@ CREATE TABLE IF NOT EXISTS public.testing_records (
 
 -- ============================================================================
 -- SECTION 13: VERIFICATION REQUESTS
+-- FIX: added IF NOT EXISTS — this was the missing guard that caused the
+-- whole script to abort partway through on re-runs (42P07 duplicate table).
 -- ============================================================================
 
-CREATE TABLE public.verification_requests (
+CREATE TABLE IF NOT EXISTS public.verification_requests (
   id TEXT PRIMARY KEY,
 
   user_id UUID NOT NULL
@@ -437,6 +431,37 @@ ON public.saved_listings (user_id, listing_id);
 
 
 -- ============================================================================
+-- SECTION 15b: HELPER FUNCTION FOR ADMIN CHECKS
+-- FIX: previous "admin" policies queried public.users from inside a policy
+-- ON public.users itself, which is a self-referencing subquery. Postgres
+-- has to re-evaluate the same RLS policy to run that inner query, which
+-- calls itself again, forever -> "infinite recursion detected in policy
+-- for relation users".
+--
+-- SECURITY DEFINER makes this function run with the privileges of the
+-- function owner rather than the calling user, so its internal query
+-- against public.users bypasses RLS entirely instead of re-triggering it.
+-- This breaks the recursion. Use is_admin() in place of any inline
+-- "EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role =
+-- 'ADMIN')" subquery, especially inside policies defined on public.users
+-- itself.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'ADMIN'
+  );
+$$;
+
+
+-- ============================================================================
 -- SECTION 16: ROW LEVEL SECURITY (RLS) ENABLE
 -- ============================================================================
 
@@ -447,6 +472,7 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.saved_listings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.certificates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.testing_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.verification_requests ENABLE ROW LEVEL SECURITY;
@@ -454,7 +480,7 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================================
--- SECTION 16: ROW LEVEL SECURITY POLICIES
+-- SECTION 16b: ROW LEVEL SECURITY POLICIES
 -- ============================================================================
 
 -- USERS
@@ -475,19 +501,14 @@ FOR UPDATE
 USING (auth.uid() = id);
 
 
+-- FIX: was a self-referencing subquery on public.users -> infinite
+-- recursion. Now uses the SECURITY DEFINER is_admin() helper instead.
 DROP POLICY IF EXISTS "Admins can view all users" ON public.users;
 
 CREATE POLICY "Admins can view all users"
 ON public.users
 FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.users
-    WHERE public.users.id = auth.uid()
-      AND public.users.role = 'ADMIN'
-  )
-);
+USING (is_admin());
 
 
 -- SHOPS
@@ -584,6 +605,10 @@ WITH CHECK (
 
 -- CONVERSATIONS
 
+-- FIX: replaced inline admin subquery with is_admin() (was recursion-safe
+-- here since it targeted public.users from a different table's policy,
+-- but standardized for consistency and to avoid triggering the users-table
+-- recursion indirectly).
 DROP POLICY IF EXISTS "Users can view own conversations" ON public.conversations;
 
 CREATE POLICY "Users can view own conversations"
@@ -592,10 +617,7 @@ FOR SELECT
 USING (
   auth.uid() = participant_1_id
   OR auth.uid() = participant_2_id
-  OR EXISTS (
-    SELECT 1 FROM public.users
-    WHERE id = auth.uid() AND role = 'ADMIN'
-  )
+  OR is_admin()
 );
 
 
@@ -623,6 +645,7 @@ USING (
 
 -- MESSAGES
 
+-- FIX: replaced inline admin subquery with is_admin().
 DROP POLICY IF EXISTS "Users can view own messages" ON public.messages;
 
 CREATE POLICY "Users can view own messages"
@@ -636,10 +659,7 @@ USING (
     WHERE participant_1_id = auth.uid()
        OR participant_2_id = auth.uid()
   )
-  OR EXISTS (
-    SELECT 1 FROM public.users
-    WHERE id = auth.uid() AND role = 'ADMIN'
-  )
+  OR is_admin()
 );
 
 
@@ -696,8 +716,6 @@ WITH CHECK (
 
 -- SAVED LISTINGS
 
-ALTER TABLE public.saved_listings ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "Users can view their saved listings" ON public.saved_listings;
 
 CREATE POLICY "Users can view their saved listings"
@@ -742,8 +760,7 @@ USING (true);
 
 -- VERIFICATION REQUESTS
 
-DROP POLICY IF EXISTS "Users can view own verification requests"
-ON public.verification_requests;
+DROP POLICY IF EXISTS "Users can view own verification requests" ON public.verification_requests;
 
 CREATE POLICY "Users can view own verification requests"
 ON public.verification_requests
@@ -753,8 +770,7 @@ USING (
 );
 
 
-DROP POLICY IF EXISTS "Users can create verification requests"
-ON public.verification_requests;
+DROP POLICY IF EXISTS "Users can create verification requests" ON public.verification_requests;
 
 CREATE POLICY "Users can create verification requests"
 ON public.verification_requests
@@ -766,20 +782,13 @@ WITH CHECK (
 
 -- AUDIT LOGS
 
-DROP POLICY IF EXISTS "Only admins can view audit logs"
-ON public.audit_logs;
+-- FIX: replaced inline admin subquery with is_admin().
+DROP POLICY IF EXISTS "Only admins can view audit logs" ON public.audit_logs;
 
 CREATE POLICY "Only admins can view audit logs"
 ON public.audit_logs
 FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.users
-    WHERE public.users.id = auth.uid()
-      AND public.users.role = 'ADMIN'
-  )
-);
+USING (is_admin());
 
 
 -- ============================================================================
@@ -947,7 +956,7 @@ NOTIFY pgrst, 'reload schema';
 
 
 -- ============================================================================
--- SECTION 21: VERIFICATION
+-- SECTION 22: VERIFICATION
 -- ============================================================================
 
 SELECT
