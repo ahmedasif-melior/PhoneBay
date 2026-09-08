@@ -380,7 +380,7 @@ CREATE TABLE IF NOT EXISTS public.testing_records (
 -- SECTION 13: VERIFICATION REQUESTS
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS public.verification_requests (
+CREATE TABLE public.verification_requests (
   id TEXT PRIMARY KEY,
 
   user_id UUID NOT NULL
@@ -400,7 +400,6 @@ CREATE TABLE IF NOT EXISTS public.verification_requests (
 
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 
 -- ============================================================================
 -- SECTION 14: AUDIT LOGS

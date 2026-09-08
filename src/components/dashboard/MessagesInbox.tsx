@@ -103,11 +103,41 @@ function formatDateHeader(isoString: string) {
   }
 }
 
+// ─── Helper: get recipient ID from conversation ────────────────────────────
+function getRecipientId(
+  conv: ConversationListItem,
+  currentUserId: string,
+): string | null {
+  const other = conv.otherParty?.id;
+  if (other && other !== "unknown" && other !== currentUserId) return other;
+  if (conv.participant1Id && conv.participant1Id !== currentUserId)
+    return conv.participant1Id;
+  if (conv.participant2Id && conv.participant2Id !== currentUserId)
+    return conv.participant2Id;
+  return null;
+}
+
+// ─── Normalise a raw Message so it always has the `text` field ────────────
+function normaliseMessage(raw: Record<string, unknown>): Message {
+  return {
+    id: raw.id as string,
+    // API returns `text`, Postgres payload returns `content`
+    text: (raw.text ?? raw.content ?? "") as string,
+    senderId: (raw.senderId ?? raw.sender_id ?? "") as string,
+    createdAt: (raw.createdAt ?? raw.created_at ?? new Date().toISOString()) as string,
+    read: Boolean(raw.read ?? (raw.read_at !== null && raw.read_at !== undefined)),
+    status: (raw.status as MessageStatus | undefined) ?? "sent",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Component
+// ─────────────────────────────────────────────────────────────────────────────
 function MessagesInboxContent() {
   const searchParams = useSearchParams();
   const requestedConversationId = searchParams.get("id");
 
-  // State management
+  // ── State ──────────────────────────────────────────────────────────────────
   const [conversations, setConversations] = React.useState<ConversationListItem[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(requestedConversationId);
   const [draft, setDraft] = React.useState("");
@@ -118,18 +148,43 @@ function MessagesInboxContent() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [otherUserTyping, setOtherUserTyping] = React.useState(false);
   const [showScrollBottom, setShowScrollBottom] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [loadingMessages, setLoadingMessages] = React.useState(false);
 
-  // Refs
+  // ── Refs ───────────────────────────────────────────────────────────────────
+  // The active conversation thread channel (conversation:${id})
   const activeChannelRef = React.useRef<RealtimeChannel | null>(null);
+  // The current user's personal inbox channel (user-inbox-${userId})
   const globalChannelRef = React.useRef<RealtimeChannel | null>(null);
+  // Joined inbox channels for each recipient (so we can send without a new sub)
+  const recipientChannelMapRef = React.useRef<Map<string, RealtimeChannel>>(new Map());
+
   const messageDedupeRef = React.useRef<Set<string>>(new Set());
   const mountedRef = React.useRef(true);
   const scrollableRef = React.useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = React.useRef(true);
   const typingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const lastTypingBroadcastRef = React.useRef(0);
+  const activeIdRef = React.useRef<string | null>(null);
+  const currentUserIdRef = React.useRef<string | null>(null);
 
-  // Load current user
+  // Keep refs in sync so realtime callbacks get current values without stale closures
+  React.useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  React.useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  // ── Cleanup on unmount ─────────────────────────────────────────────────────
+  React.useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ── Load current user ──────────────────────────────────────────────────────
   React.useEffect(() => {
     let cancelled = false;
 
@@ -137,486 +192,20 @@ function MessagesInboxContent() {
       try {
         const response = await fetch("/api/auth/me", { cache: "no-store" });
         if (!response.ok || cancelled) return;
-        const result = await response.json();
+        const result = await response.json() as { user?: { id: string } };
         if (!cancelled && result.user?.id) {
           setCurrentUserId(result.user.id);
         }
       } catch (error) {
-        console.error("Failed to load current user:", error);
+        console.error("[Chat] Failed to load current user:", error);
       }
     }
 
     void loadCurrentUser();
-
-    return () => {
-      cancelled = true;
-      mountedRef.current = false;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // Mark conversation read helper
-  const markConversationAsRead = React.useCallback(async (convId: string) => {
-    try {
-      await fetch(`/api/conversations/${convId}/read`, {
-        method: "POST",
-      });
-      // Locally reset unread count in conversations state
-      setConversations((prev) =>
-        prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c)),
-      );
-    } catch (e) {
-      console.error("Failed to mark conversation as read:", e);
-    }
-  }, []);
-
-  const [prevRequestedId, setPrevRequestedId] = React.useState(requestedConversationId);
-  if (requestedConversationId !== prevRequestedId) {
-    setPrevRequestedId(requestedConversationId);
-    if (requestedConversationId) {
-      setActiveId(requestedConversationId);
-      setShowThreadMobile(true);
-    }
-  }
-
-  // Reload conversation list helper
-  const reloadConversations = React.useCallback(async () => {
-    try {
-      const response = await fetch("/api/conversations", { cache: "no-store" });
-      if (!response.ok || !mountedRef.current) return;
-      const result = await response.json();
-      const list: ConversationListItem[] = Array.isArray(result.conversations)
-        ? result.conversations
-        : [];
-      const processed = list.map((c) => {
-        if (!c.otherParty) {
-          c.otherParty = {
-            id: "unknown",
-            fullName: "PhoneBay User",
-            avatarUrl: null,
-            phoneNumber: null,
-          };
-        }
-        return c;
-      });
-      setConversations(processed);
-    } catch (error) {
-      console.error("Failed to reload conversations:", error);
-    }
-  }, []);
-
-  // Initial conversation load
-  React.useEffect(() => {
-    let ignore = false;
-
-    async function initConversations() {
-      try {
-        const response = await fetch("/api/conversations", { cache: "no-store" });
-        if (!response.ok) return;
-
-        const result = await response.json();
-        if (ignore) return;
-
-        const list: ConversationListItem[] = Array.isArray(result.conversations)
-          ? result.conversations
-          : [];
-
-        const processed = list.map((c) => {
-          if (!c.otherParty) {
-            c.otherParty = {
-              id: "unknown",
-              fullName: "PhoneBay User",
-              avatarUrl: null,
-              phoneNumber: null,
-            };
-          }
-          return c;
-        });
-
-        setConversations(processed);
-
-        setActiveId((current) => {
-          if (requestedConversationId && processed.some((c) => c.id === requestedConversationId)) {
-            return requestedConversationId;
-          }
-          if (current && processed.some((c) => c.id === current)) {
-            return current;
-          }
-          return processed[0]?.id ?? null;
-        });
-      } catch (error) {
-        console.error("Failed to load conversations:", error);
-      }
-    }
-
-    void initConversations();
-
-    return () => {
-      ignore = true;
-    };
-  }, [requestedConversationId]);
-
-  // Load messages for a conversation
-  const fetchMessagesForActive = React.useCallback(
-    async (targetId: string) => {
-      try {
-        const response = await fetch(`/api/conversations/${targetId}/messages`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) return;
-
-        const result = await response.json();
-        if (!mountedRef.current) return;
-
-        const rawList: Message[] = Array.isArray(result.messages) ? result.messages : [];
-
-        const dedupedMap = new Map<string, Message>();
-        rawList.forEach((m) => {
-          dedupedMap.set(m.id, { ...m, status: "sent" });
-        });
-
-        messageDedupeRef.current = new Set(dedupedMap.keys());
-        setMessages(Array.from(dedupedMap.values()));
-
-        void markConversationAsRead(targetId);
-
-        shouldAutoScrollRef.current = true;
-        setTimeout(() => {
-          if (scrollableRef.current) {
-            scrollableRef.current.scrollTop = scrollableRef.current.scrollHeight;
-          }
-        }, 50);
-      } catch (error) {
-        console.error("Failed to load messages:", error);
-      }
-    },
-    [markConversationAsRead],
-  );
-
-  // Helper to handle incoming message from any source (Realtime broadcast or postgres_changes)
-  const handleIncomingMessage = React.useCallback(
-    (incomingMsg: Message, convId: string) => {
-      if (!mountedRef.current) return;
-
-      // Update conversation in sidebar preview and unread count
-      setConversations((prev) => {
-        const index = prev.findIndex((c) => c.id === convId);
-        if (index === -1) {
-          void reloadConversations();
-          return prev;
-        }
-
-        const target = prev[index];
-        const isCurrentActive = activeId === target.id;
-        const updated: ConversationListItem = {
-          ...target,
-          lastMessage: incomingMsg,
-          unreadCount:
-            !isCurrentActive && incomingMsg.senderId !== currentUserId
-              ? target.unreadCount + 1
-              : target.unreadCount,
-        };
-
-        const remaining = prev.filter((_, i) => i !== index);
-        return [updated, ...remaining];
-      });
-
-      // If message is for currently active conversation, append to thread
-      if (convId === activeId) {
-        if (messageDedupeRef.current.has(incomingMsg.id)) {
-          return;
-        }
-        messageDedupeRef.current.add(incomingMsg.id);
-
-        setMessages((prev) => {
-          // Reconcile optimistic sending message from this sender
-          const optimisticIndex = prev.findIndex(
-            (m) =>
-              m.status === "sending" &&
-              m.senderId === incomingMsg.senderId &&
-              m.text === incomingMsg.text,
-          );
-
-          if (optimisticIndex !== -1) {
-            const updated = [...prev];
-            updated[optimisticIndex] = incomingMsg;
-            return updated;
-          }
-
-          if (prev.some((m) => m.id === incomingMsg.id)) {
-            return prev;
-          }
-          return [...prev, incomingMsg];
-        });
-
-        // If from other party, mark as read & send read receipt back
-        if (incomingMsg.senderId !== currentUserId) {
-          void markConversationAsRead(convId);
-          void activeChannelRef.current?.send({
-            type: "broadcast",
-            event: "messages_read",
-            payload: { conversationId: convId, readerId: currentUserId },
-          });
-        }
-
-        if (shouldAutoScrollRef.current) {
-          setTimeout(() => {
-            if (scrollableRef.current) {
-              scrollableRef.current.scrollTop = scrollableRef.current.scrollHeight;
-            }
-          }, 40);
-        } else {
-          setShowScrollBottom(true);
-        }
-      }
-    },
-    [activeId, currentUserId, markConversationAsRead, reloadConversations],
-  );
-
-  // Load messages when activeId changes
-  React.useEffect(() => {
-    if (!activeId) return;
-    void fetchMessagesForActive(activeId);
-  }, [activeId, fetchMessagesForActive]);
-
-  // Global Realtime Subscription: listens to user's conversation/messages updates across all chats
-  React.useEffect(() => {
-    if (!currentUserId) return;
-
-    const supabase = getSupabaseBrowserClient();
-
-    const channel = supabase
-      .channel(`user-inbox-${currentUserId}`, {
-        config: {
-          broadcast: { self: false },
-        },
-      })
-      // 1. Direct Realtime Broadcast to inbox
-      .on("broadcast", { event: "inbox_update" }, (payload) => {
-        const msg = payload.payload?.message as Message | undefined;
-        const cId = payload.payload?.conversationId as string | undefined;
-        if (msg && cId) {
-          handleIncomingMessage(msg, cId);
-        }
-      })
-      // 2. Postgres changes fallback
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          if (!mountedRef.current) return;
-          const raw = payload.new as {
-            id: string;
-            conversation_id: string;
-            sender_id: string;
-            content: string;
-            read_at: string | null;
-            created_at: string;
-          };
-
-          if (raw && raw.conversation_id) {
-            const newMsg: Message = {
-              id: raw.id,
-              text: raw.content,
-              senderId: raw.sender_id,
-              createdAt: raw.created_at,
-              read: raw.read_at !== null,
-              status: "sent",
-            };
-            handleIncomingMessage(newMsg, raw.conversation_id);
-          }
-        },
-      )
-      .subscribe();
-
-    globalChannelRef.current = channel;
-
-    return () => {
-      if (globalChannelRef.current) {
-        globalChannelRef.current.unsubscribe();
-        globalChannelRef.current = null;
-      }
-    };
-  }, [currentUserId, handleIncomingMessage]);
-
-  // Active Thread Realtime Subscription: listens to messages, read receipts, and typing inside active chat
-  React.useEffect(() => {
-    if (!activeId || !currentUserId) {
-      if (activeChannelRef.current) {
-        activeChannelRef.current.unsubscribe();
-        activeChannelRef.current = null;
-      }
-      return;
-    }
-
-    const supabase = getSupabaseBrowserClient();
-
-    const channel = supabase
-      .channel(`conversation:${activeId}`, {
-        config: {
-          broadcast: { self: false },
-        },
-      })
-      // 1. Instant Realtime Broadcast for incoming messages
-      .on("broadcast", { event: "new_message" }, (payload) => {
-        const msg = payload.payload?.message as Message | undefined;
-        const cId = payload.payload?.conversationId as string | undefined;
-        if (msg && cId) {
-          handleIncomingMessage(msg, cId);
-        }
-      })
-      // 2. Realtime Broadcast for read receipts
-      .on("broadcast", { event: "messages_read" }, (payload) => {
-        if (!mountedRef.current) return;
-        const cId = payload.payload?.conversationId;
-        if (cId === activeId) {
-          setMessages((prev) => prev.map((m) => ({ ...m, read: true })));
-        }
-      })
-      // 3. Typing indicator broadcast
-      .on("broadcast", { event: "typing" }, (payload) => {
-        if (!mountedRef.current) return;
-        const typingSenderId = payload.payload?.senderId;
-        const isTyping = Boolean(payload.payload?.typing);
-
-        if (typingSenderId && typingSenderId !== currentUserId) {
-          setOtherUserTyping(isTyping);
-          if (typingTimeoutRef.current) {
-            clearTimeout(typingTimeoutRef.current);
-          }
-          if (isTyping) {
-            typingTimeoutRef.current = setTimeout(() => {
-              setOtherUserTyping(false);
-            }, 3000);
-          }
-        }
-      })
-      // 4. Postgres Changes fallback (INSERT)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          if (!mountedRef.current) return;
-
-          const raw = payload.new as {
-            id: string;
-            conversation_id: string;
-            sender_id: string;
-            content: string;
-            read_at: string | null;
-            created_at: string;
-          };
-
-          if (raw && raw.conversation_id === activeId) {
-            const incomingMsg: Message = {
-              id: raw.id,
-              text: raw.content,
-              senderId: raw.sender_id,
-              createdAt: raw.created_at,
-              read: raw.read_at !== null,
-              status: "sent",
-            };
-            handleIncomingMessage(incomingMsg, activeId);
-          }
-        },
-      )
-      // 5. Postgres Changes fallback (UPDATE)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          if (!mountedRef.current) return;
-
-          const raw = payload.new as {
-            id: string;
-            conversation_id?: string;
-            read_at: string | null;
-          };
-
-          if (raw && raw.read_at) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === raw.id ? { ...m, read: true } : m,
-              ),
-            );
-          }
-        },
-      )
-      .subscribe();
-
-    activeChannelRef.current = channel;
-
-    return () => {
-      if (activeChannelRef.current) {
-        activeChannelRef.current.unsubscribe();
-        activeChannelRef.current = null;
-      }
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      setOtherUserTyping(false);
-    };
-  }, [activeId, currentUserId, handleIncomingMessage]);
-
-  // Synchronize on window focus / tab visibility
-  React.useEffect(() => {
-    const handleSync = () => {
-      if (document.visibilityState === "visible") {
-        if (activeId) {
-          void fetchMessagesForActive(activeId);
-        }
-        void reloadConversations();
-      }
-    };
-
-    window.addEventListener("focus", handleSync);
-    document.addEventListener("visibilitychange", handleSync);
-
-    return () => {
-      window.removeEventListener("focus", handleSync);
-      document.removeEventListener("visibilitychange", handleSync);
-    };
-  }, [activeId, fetchMessagesForActive, reloadConversations]);
-
-  // Send typing broadcast (throttled)
-  const handleTypingActivity = React.useCallback(() => {
-    if (!activeChannelRef.current || !currentUserId) return;
-    const now = Date.now();
-    if (now - lastTypingBroadcastRef.current > 1500) {
-      lastTypingBroadcastRef.current = now;
-      void activeChannelRef.current.send({
-        type: "broadcast",
-        event: "typing",
-        payload: { senderId: currentUserId, typing: true },
-      });
-    }
-  }, [currentUserId]);
-
-  // Track scroll position
-  const handleScroll = React.useCallback(() => {
-    if (!scrollableRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-
-    const isNearBottom = distanceFromBottom < 80;
-    shouldAutoScrollRef.current = isNearBottom;
-    if (isNearBottom) {
-      setShowScrollBottom(false);
-    }
-  }, []);
-
+  // ── Scroll helpers ─────────────────────────────────────────────────────────
   const scrollToBottom = React.useCallback(() => {
     if (scrollableRef.current) {
       scrollableRef.current.scrollTo({
@@ -628,13 +217,462 @@ function MessagesInboxContent() {
     }
   }, []);
 
-  // Currently active conversation
+  const scrollToBottomInstant = React.useCallback(() => {
+    setTimeout(() => {
+      if (scrollableRef.current) {
+        scrollableRef.current.scrollTop = scrollableRef.current.scrollHeight;
+      }
+    }, 50);
+  }, []);
+
+  const handleScroll = React.useCallback(() => {
+    if (!scrollableRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollableRef.current;
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    const isNearBottom = distanceFromBottom < 80;
+    shouldAutoScrollRef.current = isNearBottom;
+    if (isNearBottom) setShowScrollBottom(false);
+  }, []);
+
+  // ── Mark conversation as read ──────────────────────────────────────────────
+  const markConversationAsRead = React.useCallback(async (convId: string) => {
+    try {
+      await fetch(`/api/conversations/${convId}/read`, { method: "POST" });
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c)),
+      );
+    } catch (e) {
+      console.error("[Chat] Failed to mark as read:", e);
+    }
+  }, []);
+
+  // ── Reload conversation list ───────────────────────────────────────────────
+  const reloadConversations = React.useCallback(async () => {
+    try {
+      const response = await fetch("/api/conversations", { cache: "no-store" });
+      if (!response.ok || !mountedRef.current) return;
+      const result = await response.json() as { conversations?: ConversationListItem[] };
+      const list = Array.isArray(result.conversations) ? result.conversations : [];
+      const processed = list.map((c) => ({
+        ...c,
+        otherParty: c.otherParty ?? {
+          id: "unknown",
+          fullName: "PhoneBay User",
+          avatarUrl: null,
+          phoneNumber: null,
+        },
+      }));
+      setConversations(processed);
+    } catch (error) {
+      console.error("[Chat] Failed to reload conversations:", error);
+    }
+  }, []);
+
+  // ── Handle a newly-arrived message (from broadcast or postgres_changes) ────
+  const handleIncomingMessage = React.useCallback(
+    (incomingMsg: Message, convId: string) => {
+      if (!mountedRef.current) return;
+
+      const myId = currentUserIdRef.current;
+      const currentActive = activeIdRef.current;
+
+      // Update sidebar preview
+      setConversations((prev) => {
+        const index = prev.findIndex((c) => c.id === convId);
+        if (index === -1) {
+          // We don't have this conversation loaded yet – reload the list
+          void reloadConversations();
+          return prev;
+        }
+        const target = prev[index];
+        const isCurrentActive = currentActive === target.id;
+        const updated: ConversationListItem = {
+          ...target,
+          lastMessage: incomingMsg,
+          updatedAt: incomingMsg.createdAt,
+          unreadCount:
+            !isCurrentActive && incomingMsg.senderId !== myId
+              ? target.unreadCount + 1
+              : target.unreadCount,
+        };
+        const remaining = prev.filter((_, i) => i !== index);
+        return [updated, ...remaining];
+      });
+
+      // Append to active thread
+      if (convId === currentActive) {
+        if (messageDedupeRef.current.has(incomingMsg.id)) return;
+        messageDedupeRef.current.add(incomingMsg.id);
+
+        setMessages((prev) => {
+          // Replace optimistic placeholder that sender sees
+          const optimisticIndex = prev.findIndex(
+            (m) =>
+              m.status === "sending" &&
+              m.senderId === incomingMsg.senderId &&
+              m.text === incomingMsg.text,
+          );
+          if (optimisticIndex !== -1) {
+            const updated = [...prev];
+            updated[optimisticIndex] = incomingMsg;
+            return updated;
+          }
+          if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+          return [...prev, incomingMsg];
+        });
+
+        // If other user's message → mark read & broadcast read receipt
+        if (incomingMsg.senderId !== myId) {
+          void markConversationAsRead(convId);
+          void activeChannelRef.current?.send({
+            type: "broadcast",
+            event: "messages_read",
+            payload: { conversationId: convId, readerId: myId },
+          });
+        }
+
+        if (shouldAutoScrollRef.current) {
+          scrollToBottomInstant();
+        } else {
+          setShowScrollBottom(true);
+        }
+      }
+    },
+    [markConversationAsRead, reloadConversations, scrollToBottomInstant],
+  );
+
+  // ── Initial conversation load ──────────────────────────────────────────────
+  React.useEffect(() => {
+    let ignore = false;
+
+    async function initConversations() {
+      setLoading(true);
+      try {
+        const response = await fetch("/api/conversations", { cache: "no-store" });
+        if (!response.ok) return;
+
+        const result = await response.json() as { conversations?: ConversationListItem[] };
+        if (ignore) return;
+
+        const list = Array.isArray(result.conversations) ? result.conversations : [];
+        const processed = list.map((c) => ({
+          ...c,
+          otherParty: c.otherParty ?? {
+            id: "unknown",
+            fullName: "PhoneBay User",
+            avatarUrl: null,
+            phoneNumber: null,
+          },
+        }));
+
+        setConversations(processed);
+
+        setActiveId((current) => {
+          if (requestedConversationId && processed.some((c) => c.id === requestedConversationId)) {
+            return requestedConversationId;
+          }
+          if (current && processed.some((c) => c.id === current)) return current;
+          return processed[0]?.id ?? null;
+        });
+      } catch (error) {
+        console.error("[Chat] Failed to load conversations:", error);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
+    void initConversations();
+    return () => { ignore = true; };
+  }, [requestedConversationId]);
+
+  // ── Sync URL param → active conversation ──────────────────────────────────
+  const [prevRequestedId, setPrevRequestedId] = React.useState(requestedConversationId);
+  if (requestedConversationId !== prevRequestedId) {
+    setPrevRequestedId(requestedConversationId);
+    if (requestedConversationId) {
+      setActiveId(requestedConversationId);
+      setShowThreadMobile(true);
+    }
+  }
+
+  // ── Fetch messages for active conversation ─────────────────────────────────
+  const fetchMessagesForActive = React.useCallback(
+    async (targetId: string) => {
+      setLoadingMessages(true);
+      try {
+        const response = await fetch(`/api/conversations/${targetId}/messages`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+
+        const result = await response.json() as { messages?: unknown[] };
+        if (!mountedRef.current) return;
+
+        const rawList = Array.isArray(result.messages) ? result.messages : [];
+
+        const dedupedMap = new Map<string, Message>();
+        rawList.forEach((m) => {
+          const msg = normaliseMessage(m as Record<string, unknown>);
+          dedupedMap.set(msg.id, msg);
+        });
+
+        messageDedupeRef.current = new Set(dedupedMap.keys());
+        setMessages(Array.from(dedupedMap.values()));
+
+        void markConversationAsRead(targetId);
+
+        shouldAutoScrollRef.current = true;
+        scrollToBottomInstant();
+      } catch (error) {
+        console.error("[Chat] Failed to load messages:", error);
+      } finally {
+        if (mountedRef.current) setLoadingMessages(false);
+      }
+    },
+    [markConversationAsRead, scrollToBottomInstant],
+  );
+
+  // Fetch messages whenever active conversation changes
+  React.useEffect(() => {
+    if (!activeId) return;
+    setMessages([]);
+    messageDedupeRef.current = new Set();
+    void fetchMessagesForActive(activeId);
+  }, [activeId, fetchMessagesForActive]);
+
+  // ── GLOBAL INBOX CHANNEL (personal channel for this user) ─────────────────
+  // Subscribe ONLY after currentUserId is resolved to avoid race condition.
+  React.useEffect(() => {
+    if (!currentUserId) return;
+
+    const supabase = getSupabaseBrowserClient();
+
+    // Clean up any previous global channel
+    if (globalChannelRef.current) {
+      void globalChannelRef.current.unsubscribe();
+      globalChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`user-inbox-${currentUserId}`, {
+        config: { broadcast: { self: true } },
+      })
+      // Receive inbox updates from other users (sidebar preview)
+      .on("broadcast", { event: "inbox_update" }, (payload) => {
+        if (!mountedRef.current) return;
+        const raw = payload.payload as Record<string, unknown> | undefined;
+        const msg = raw?.message as Record<string, unknown> | undefined;
+        const cId = raw?.conversationId as string | undefined;
+        if (msg && cId) {
+          handleIncomingMessage(normaliseMessage(msg), cId);
+        }
+      })
+      // Postgres changes fallback for messages INSERT
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          if (!mountedRef.current) return;
+          const raw = payload.new as Record<string, unknown>;
+          if (raw?.conversation_id) {
+            handleIncomingMessage(normaliseMessage(raw), raw.conversation_id as string);
+          }
+        },
+      )
+      .subscribe((status, err) => {
+        if (err) console.error("[Chat] Global channel error:", err);
+        if (status === "SUBSCRIBED") {
+          console.log(`[Chat] Subscribed to user-inbox-${currentUserId}`);
+        }
+      });
+
+    globalChannelRef.current = channel;
+
+    return () => {
+      void channel.unsubscribe();
+      globalChannelRef.current = null;
+    };
+  }, [currentUserId, handleIncomingMessage]);
+
+  // ── ACTIVE THREAD CHANNEL (conversation:${id}) ────────────────────────────
+  // Handles new messages, read receipts, and typing for the open chat.
+  React.useEffect(() => {
+    // Clean up previous thread channel
+    if (activeChannelRef.current) {
+      void activeChannelRef.current.unsubscribe();
+      activeChannelRef.current = null;
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    setOtherUserTyping(false);
+
+    if (!activeId || !currentUserId) return;
+
+    const supabase = getSupabaseBrowserClient();
+
+    const channel = supabase
+      .channel(`conversation:${activeId}`, {
+        // self: true so we can filter in handler (supports same-browser testing)
+        config: { broadcast: { self: true } },
+      })
+      // 1. New message from other user (instant broadcast delivery)
+      .on("broadcast", { event: "new_message" }, (payload) => {
+        if (!mountedRef.current) return;
+        const raw = payload.payload as Record<string, unknown> | undefined;
+        const msg = raw?.message as Record<string, unknown> | undefined;
+        const cId = raw?.conversationId as string | undefined;
+        // Filter out our own broadcasts (self: true)
+        if (msg && cId && (msg.senderId ?? msg.sender_id) !== currentUserIdRef.current) {
+          handleIncomingMessage(normaliseMessage(msg), cId);
+        }
+      })
+      // 2. Read receipt from other user
+      .on("broadcast", { event: "messages_read" }, (payload) => {
+        if (!mountedRef.current) return;
+        const raw = payload.payload as Record<string, unknown> | undefined;
+        const cId = raw?.conversationId as string;
+        const readerId = raw?.readerId as string;
+        // Only update if the other user read, not ourselves
+        if (cId === activeIdRef.current && readerId !== currentUserIdRef.current) {
+          setMessages((prev) => prev.map((m) => ({ ...m, read: true })));
+        }
+      })
+      // 3. Typing indicator
+      .on("broadcast", { event: "typing" }, (payload) => {
+        if (!mountedRef.current) return;
+        const raw = payload.payload as Record<string, unknown> | undefined;
+        const typingSenderId = raw?.senderId as string | undefined;
+        const isTyping = Boolean(raw?.typing);
+
+        // Filter out self (supports same-browser testing)
+        if (!typingSenderId || typingSenderId === currentUserIdRef.current) return;
+
+        setOtherUserTyping(isTyping);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        if (isTyping) {
+          typingTimeoutRef.current = setTimeout(() => {
+            setOtherUserTyping(false);
+          }, 3500);
+        }
+      })
+      // 4. Postgres Changes fallback (INSERT)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          if (!mountedRef.current) return;
+          const raw = payload.new as Record<string, unknown>;
+          if (raw?.conversation_id === activeIdRef.current) {
+            handleIncomingMessage(normaliseMessage(raw), activeIdRef.current!);
+          }
+        },
+      )
+      // 5. Postgres Changes fallback (UPDATE – read_at set)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          if (!mountedRef.current) return;
+          const raw = payload.new as { id: string; read_at: string | null };
+          if (raw?.read_at) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === raw.id ? { ...m, read: true } : m)),
+            );
+          }
+        },
+      )
+      .subscribe((status, err) => {
+        if (err) console.error("[Chat] Thread channel error:", err);
+        if (status === "SUBSCRIBED") {
+          console.log(`[Chat] Subscribed to conversation:${activeId}`);
+        }
+      });
+
+    activeChannelRef.current = channel;
+
+    return () => {
+      void channel.unsubscribe();
+      activeChannelRef.current = null;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      setOtherUserTyping(false);
+    };
+  }, [activeId, currentUserId, handleIncomingMessage]);
+
+  // ── Join recipient inbox channels proactively ─────────────────────────────
+  // Pre-join the inbox channels for all known conversation partners so that
+  // sending a broadcast to them doesn't require creating a new channel on the fly.
+  React.useEffect(() => {
+    if (!currentUserId || conversations.length === 0) return;
+
+    const supabase = getSupabaseBrowserClient();
+    const existingKeys = new Set(recipientChannelMapRef.current.keys());
+
+    for (const conv of conversations) {
+      const recipientId = getRecipientId(conv, currentUserId);
+      if (!recipientId || existingKeys.has(recipientId)) continue;
+
+      const ch = supabase
+        .channel(`user-inbox-${recipientId}`, {
+          config: { broadcast: { self: true } },
+        })
+        .subscribe();
+
+      recipientChannelMapRef.current.set(recipientId, ch);
+    }
+
+    return () => {
+      // Cleanup handled on unmount via mount ref
+    };
+  }, [conversations, currentUserId]);
+
+  // Cleanup all recipient channels on unmount
+  React.useEffect(() => {
+    return () => {
+      for (const ch of recipientChannelMapRef.current.values()) {
+        void ch.unsubscribe();
+      }
+      recipientChannelMapRef.current.clear();
+    };
+  }, []);
+
+  // ── Re-sync on window focus / visibility ──────────────────────────────────
+  React.useEffect(() => {
+    const handleSync = () => {
+      if (document.visibilityState === "visible") {
+        if (activeIdRef.current) void fetchMessagesForActive(activeIdRef.current);
+        void reloadConversations();
+      }
+    };
+    window.addEventListener("focus", handleSync);
+    document.addEventListener("visibilitychange", handleSync);
+    return () => {
+      window.removeEventListener("focus", handleSync);
+      document.removeEventListener("visibilitychange", handleSync);
+    };
+  }, [fetchMessagesForActive, reloadConversations]);
+
+  // ── Typing broadcast ───────────────────────────────────────────────────────
+  const handleTypingActivity = React.useCallback(() => {
+    if (!activeChannelRef.current || !currentUserIdRef.current) return;
+    const now = Date.now();
+    if (now - lastTypingBroadcastRef.current > 1500) {
+      lastTypingBroadcastRef.current = now;
+      void activeChannelRef.current.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { senderId: currentUserIdRef.current, typing: true },
+      });
+    }
+  }, []);
+
+  // ── Currently active conversation ──────────────────────────────────────────
   const active = React.useMemo(
     () => conversations.find((c) => c.id === activeId) ?? null,
     [conversations, activeId],
   );
 
-  // Send message
+  // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = React.useCallback(async () => {
     const text = draft.trim();
     if (!text || !active || sending || !currentUserId) return;
@@ -642,7 +680,7 @@ function MessagesInboxContent() {
     setSending(true);
     setDraft("");
 
-    // Optimistic message
+    // Optimistic message shown immediately
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const optimisticMsg: Message = {
       id: tempId,
@@ -655,9 +693,9 @@ function MessagesInboxContent() {
 
     setMessages((prev) => [...prev, optimisticMsg]);
     shouldAutoScrollRef.current = true;
-    setTimeout(() => scrollToBottom(), 10);
+    scrollToBottomInstant();
 
-    // Update conversation sidebar preview optimistically
+    // Optimistically update sidebar
     setConversations((prev) => {
       const idx = prev.findIndex((c) => c.id === active.id);
       if (idx === -1) return prev;
@@ -672,21 +710,21 @@ function MessagesInboxContent() {
         body: JSON.stringify({ text }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to send");
-      }
+      if (!response.ok) throw new Error("Failed to send");
 
-      const data = await response.json();
+      const data = await response.json() as { message?: Record<string, unknown> };
+      const serverMsg = data.message ?? {};
+
       const confirmedMsg: Message = {
-        id: data.message?.id || tempId,
-        text: data.message?.text || text,
+        id: (serverMsg.id as string) || tempId,
+        text: (serverMsg.text as string) || text,
         senderId: currentUserId,
-        createdAt: data.message?.createdAt || optimisticMsg.createdAt,
-        read: Boolean(data.message?.read),
+        createdAt: (serverMsg.createdAt as string) || optimisticMsg.createdAt,
+        read: Boolean(serverMsg.read),
         status: "sent",
       };
 
-      // Add to dedupe set
+      // Add to dedupe set so incoming broadcast doesn't duplicate
       messageDedupeRef.current.add(confirmedMsg.id);
 
       // Reconcile optimistic message
@@ -694,106 +732,103 @@ function MessagesInboxContent() {
         prev.map((m) => (m.id === tempId ? confirmedMsg : m)),
       );
 
-      // Update sidebar
+      // Update sidebar with confirmed message
       setConversations((prev) =>
         prev.map((c) =>
           c.id === active.id ? { ...c, lastMessage: confirmedMsg } : c,
         ),
       );
 
-      // 1. INSTANT BROADCAST TO ACTIVE THREAD CHANNEL (Other user sees it immediately!)
+      // ── Broadcast 1: notify recipient's conversation thread ─────────────
       if (activeChannelRef.current) {
         void activeChannelRef.current.send({
           type: "broadcast",
           event: "new_message",
-          payload: {
-            message: confirmedMsg,
-            conversationId: active.id,
-          },
+          payload: { message: confirmedMsg, conversationId: active.id },
         });
       }
 
-      // 2. BROADCAST TO RECIPIENT'S INBOX CHANNEL (Updates their sidebar if in another conversation)
-      const recipientId =
-        active.otherParty?.id && active.otherParty.id !== "unknown"
-          ? active.otherParty.id
-          : active.participant1Id === currentUserId
-            ? active.participant2Id
-            : active.participant1Id;
-
-      if (recipientId && recipientId !== currentUserId) {
-        const supabase = getSupabaseBrowserClient();
-        const recipientChannel = supabase.channel(`user-inbox-${recipientId}`);
-        recipientChannel.subscribe((subStatus) => {
-          if (subStatus === "SUBSCRIBED") {
-            void recipientChannel.send({
-              type: "broadcast",
-              event: "inbox_update",
-              payload: {
-                message: confirmedMsg,
-                conversationId: active.id,
-              },
-            });
-          }
-        });
+      // ── Broadcast 2: notify recipient's inbox sidebar ───────────────────
+      const recipientId = getRecipientId(active, currentUserId);
+      if (recipientId) {
+        // Use the pre-joined channel if available
+        const recipientCh = recipientChannelMapRef.current.get(recipientId);
+        if (recipientCh) {
+          void recipientCh.send({
+            type: "broadcast",
+            event: "inbox_update",
+            payload: { message: confirmedMsg, conversationId: active.id },
+          });
+        } else {
+          // Fallback: create channel (already SUBSCRIBED by recipient, so broadcast delivers)
+          const supabase = getSupabaseBrowserClient();
+          const tempCh = supabase.channel(`user-inbox-${recipientId}`, {
+            config: { broadcast: { self: true } },
+          });
+          tempCh.subscribe((status) => {
+            if (status === "SUBSCRIBED") {
+              void tempCh.send({
+                type: "broadcast",
+                event: "inbox_update",
+                payload: { message: confirmedMsg, conversationId: active.id },
+              });
+            }
+          });
+          // Store for future use
+          recipientChannelMapRef.current.set(recipientId, tempCh);
+        }
       }
     } catch (err) {
-      console.error("Send message error:", err);
-      // Mark failed
+      console.error("[Chat] Send message error:", err);
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId ? { ...m, status: "failed" } : m,
-        ),
+        prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m)),
       );
+      // Restore draft on failure
+      setDraft(text);
     } finally {
       setSending(false);
     }
-  }, [active, draft, sending, currentUserId, scrollToBottom]);
+  }, [active, draft, sending, currentUserId, scrollToBottomInstant]);
 
-  // Key down in draft input
+  // ── Key down in draft input ────────────────────────────────────────────────
   const handleKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (!sending && draft.trim()) {
-          void sendMessage();
-        }
+        if (!sending && draft.trim()) void sendMessage();
       }
     },
     [sending, draft, sendMessage],
   );
 
-  // Filter conversations with search
+  // ── Filtered conversations ─────────────────────────────────────────────────
   const filteredConversations = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return conversations;
-
     return conversations.filter((c) => {
-      const name = c.otherParty?.fullName?.toLowerCase() || "";
-      const listingTitle = c.listing?.title?.toLowerCase() || "";
-      const lastText = c.lastMessage?.text?.toLowerCase() || "";
+      const name = c.otherParty?.fullName?.toLowerCase() ?? "";
+      const listingTitle = c.listing?.title?.toLowerCase() ?? "";
+      const lastText = c.lastMessage?.text?.toLowerCase() ?? "";
       return name.includes(q) || listingTitle.includes(q) || lastText.includes(q);
     });
   }, [conversations, searchQuery]);
 
-  // Display name helper
-  const getDisplayName = (conversation: ConversationListItem) => {
-    if (conversation.otherParty?.fullName) {
-      return conversation.otherParty.fullName;
-    }
-    return "PhoneBay User";
-  };
+  const getDisplayName = (conversation: ConversationListItem) =>
+    conversation.otherParty?.fullName || "PhoneBay User";
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="border border-border rounded-[var(--pb-radius-lg)] overflow-hidden h-[calc(100vh-220px)] min-h-[500px] grid lg:grid-cols-[340px_1fr] bg-surface shadow-xs">
-      {/* Conversation List Sidebar */}
+      {/* ── Conversation Sidebar ── */}
       <div
         className={cn(
           "border-r border-border flex flex-col min-h-0 bg-surface",
           showThreadMobile && "hidden lg:flex",
         )}
       >
-        {/* Search header */}
+        {/* Search */}
         <div className="p-3 border-b border-border">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint" />
@@ -807,96 +842,98 @@ function MessagesInboxContent() {
           </div>
         </div>
 
-        {/* List items */}
+        {/* List */}
         <div className="flex-1 overflow-y-auto divide-y divide-border/60">
-          {filteredConversations.length === 0 && (
+          {loading ? (
+            <div className="p-6 text-center text-sm text-ink-faint animate-pulse">
+              Loading conversations…
+            </div>
+          ) : filteredConversations.length === 0 ? (
             <div className="p-6 text-center text-sm text-ink-faint">
               {searchQuery ? "No chats found." : "No conversations yet."}
             </div>
-          )}
+          ) : (
+            filteredConversations.map((conversation) => {
+              const displayName = getDisplayName(conversation);
+              const isSelected = activeId === conversation.id;
 
-          {filteredConversations.map((conversation) => {
-            const displayName = getDisplayName(conversation);
-            const isSelected = activeId === conversation.id;
-
-            return (
-              <button
-                key={conversation.id}
-                type="button"
-                onClick={() => {
-                  setActiveId(conversation.id);
-                  setShowThreadMobile(true);
-                  void markConversationAsRead(conversation.id);
-                }}
-                className={cn(
-                  "w-full text-left flex items-start gap-3 p-3.5 transition-colors relative",
-                  isSelected
-                    ? "bg-brand/10 hover:bg-brand/15"
-                    : "hover:bg-bg/60",
-                )}
-              >
-                <div className="relative shrink-0">
-                  <Avatar name={displayName} size="md" />
-                  {conversation.listing && (
-                    <div className="absolute -bottom-1 -right-1 bg-surface rounded-full p-0.5 border border-border shadow-xs">
-                      <ShoppingBag className="h-3 w-3 text-brand" />
-                    </div>
+              return (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveId(conversation.id);
+                    setShowThreadMobile(true);
+                    void markConversationAsRead(conversation.id);
+                  }}
+                  className={cn(
+                    "w-full text-left flex items-start gap-3 p-3.5 transition-colors relative",
+                    isSelected ? "bg-brand/10 hover:bg-brand/15" : "hover:bg-bg/60",
                   )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <p
-                      className={cn(
-                        "text-sm truncate",
-                        conversation.unreadCount > 0 ? "font-semibold text-ink" : "font-medium text-ink",
-                      )}
-                    >
-                      {displayName}
-                    </p>
-                    <span className="text-[11px] text-ink-faint shrink-0">
-                      {conversation.lastMessage
-                        ? formatDateHeader(conversation.lastMessage.createdAt)
-                        : "New"}
-                    </span>
+                >
+                  <div className="relative shrink-0">
+                    <Avatar name={displayName} size="md" />
+                    {conversation.listing && (
+                      <div className="absolute -bottom-1 -right-1 bg-surface rounded-full p-0.5 border border-border shadow-xs">
+                        <ShoppingBag className="h-3 w-3 text-brand" />
+                      </div>
+                    )}
                   </div>
 
-                  {/* Device / Listing preview */}
-                  {conversation.listing ? (
-                    <p className="text-xs text-brand font-medium truncate mt-0.5">
-                      {conversation.listing.title}
-                    </p>
-                  ) : conversation.listingId ? (
-                    <p className="text-xs text-ink-faint truncate mt-0.5">
-                      Listing {conversation.listingId}
-                    </p>
-                  ) : null}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <p
+                        className={cn(
+                          "text-sm truncate",
+                          conversation.unreadCount > 0
+                            ? "font-semibold text-ink"
+                            : "font-medium text-ink",
+                        )}
+                      >
+                        {displayName}
+                      </p>
+                      <span className="text-[11px] text-ink-faint shrink-0">
+                        {conversation.lastMessage
+                          ? formatDateHeader(conversation.lastMessage.createdAt)
+                          : "New"}
+                      </span>
+                    </div>
 
-                  {/* Last message text */}
-                  <p
-                    className={cn(
-                      "text-xs truncate mt-1",
-                      conversation.unreadCount > 0
-                        ? "font-semibold text-ink"
-                        : "text-ink-soft",
-                    )}
-                  >
-                    {conversation.lastMessage?.text || "No messages yet"}
-                  </p>
-                </div>
+                    {conversation.listing ? (
+                      <p className="text-xs text-brand font-medium truncate mt-0.5">
+                        {conversation.listing.title}
+                      </p>
+                    ) : conversation.listingId ? (
+                      <p className="text-xs text-ink-faint truncate mt-0.5">
+                        Listing {conversation.listingId}
+                      </p>
+                    ) : null}
 
-                {conversation.unreadCount > 0 && (
-                  <span className="h-5 min-w-[20px] px-1.5 rounded-full bg-brand text-white text-[11px] font-bold flex items-center justify-center shrink-0 self-center shadow-xs">
-                    {conversation.unreadCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+                    <p
+                      className={cn(
+                        "text-xs truncate mt-1",
+                        conversation.unreadCount > 0
+                          ? "font-semibold text-ink"
+                          : "text-ink-soft",
+                      )}
+                    >
+                      {conversation.lastMessage?.text || "No messages yet"}
+                    </p>
+                  </div>
+
+                  {conversation.unreadCount > 0 && (
+                    <span className="h-5 min-w-[20px] px-1.5 rounded-full bg-brand text-white text-[11px] font-bold flex items-center justify-center shrink-0 self-center shadow-xs">
+                      {conversation.unreadCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* Active Conversation Thread */}
+      {/* ── Active Conversation Thread ── */}
       <div
         className={cn(
           "flex min-h-0 flex-col overflow-hidden bg-bg/30 relative",
@@ -934,7 +971,7 @@ function MessagesInboxContent() {
                   <p className="text-xs text-ink-faint truncate">
                     {otherUserTyping ? (
                       <span className="text-brand font-medium animate-pulse">
-                        typing...
+                        typing…
                       </span>
                     ) : active.listing ? (
                       active.listing.title
@@ -945,7 +982,6 @@ function MessagesInboxContent() {
                 </div>
               </div>
 
-              {/* Call action button if phone number is present */}
               {active.otherParty?.phoneNumber && (
                 <a
                   href={`tel:${active.otherParty.phoneNumber}`}
@@ -957,7 +993,7 @@ function MessagesInboxContent() {
               )}
             </div>
 
-            {/* Listing Context Banner (if conversation is for a phone listing) */}
+            {/* Listing Context Banner */}
             {active.listing && (
               <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2.5 bg-brand-tint/40 border-b border-border text-xs">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -971,9 +1007,7 @@ function MessagesInboxContent() {
                     />
                   </div>
                   <div className="min-w-0">
-                    <p className="font-medium text-ink truncate">
-                      {active.listing.title}
-                    </p>
+                    <p className="font-medium text-ink truncate">{active.listing.title}</p>
                     <p className="font-data font-semibold text-brand">
                       {formatPKR(active.listing.price)}
                     </p>
@@ -991,13 +1025,17 @@ function MessagesInboxContent() {
               </div>
             )}
 
-            {/* Scrollable Messages Area */}
+            {/* Messages Area */}
             <div
               ref={scrollableRef}
               onScroll={handleScroll}
               className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3 overscroll-contain"
             >
-              {messages.length === 0 ? (
+              {loadingMessages ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-sm text-ink-faint animate-pulse">Loading messages…</div>
+                </div>
+              ) : messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6">
                   <div className="h-12 w-12 rounded-full bg-brand-tint flex items-center justify-center text-brand mb-3">
                     <ShoppingBag className="h-6 w-6" />
@@ -1013,7 +1051,6 @@ function MessagesInboxContent() {
                 messages.map((message, idx) => {
                   const isMine =
                     currentUserId !== null && message.senderId === currentUserId;
-
                   const prev = messages[idx - 1];
                   const showDateDivider =
                     !prev ||
@@ -1046,7 +1083,6 @@ function MessagesInboxContent() {
                         >
                           <p className="whitespace-pre-wrap">{message.text}</p>
 
-                          {/* Message meta (time and status) */}
                           <div
                             className={cn(
                               "flex items-center justify-end gap-1 mt-1 text-[10px]",
@@ -1080,7 +1116,7 @@ function MessagesInboxContent() {
 
               {/* Typing indicator bubble */}
               {otherUserTyping && (
-                <div className="flex items-center gap-1.5 bg-surface border border-border px-3.5 py-2 rounded-full w-fit shadow-xs animate-fade-in">
+                <div className="flex items-center gap-1.5 bg-surface border border-border px-3.5 py-2 rounded-full w-fit shadow-xs">
                   <span className="h-1.5 w-1.5 rounded-full bg-brand animate-bounce [animation-delay:-0.3s]" />
                   <span className="h-1.5 w-1.5 rounded-full bg-brand animate-bounce [animation-delay:-0.15s]" />
                   <span className="h-1.5 w-1.5 rounded-full bg-brand animate-bounce" />
@@ -1088,7 +1124,7 @@ function MessagesInboxContent() {
               )}
             </div>
 
-            {/* Scroll-to-bottom floating button */}
+            {/* Scroll-to-bottom button */}
             {showScrollBottom && (
               <button
                 type="button"
@@ -1106,9 +1142,7 @@ function MessagesInboxContent() {
               className="flex shrink-0 items-center gap-2 border-t border-border bg-surface p-3"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!sending && draft.trim()) {
-                  void sendMessage();
-                }
+                if (!sending && draft.trim()) void sendMessage();
               }}
             >
               <input
@@ -1119,7 +1153,7 @@ function MessagesInboxContent() {
                   handleTypingActivity();
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Type your message..."
+                placeholder="Type your message…"
                 disabled={sending}
                 autoComplete="off"
                 className="h-10 min-w-0 flex-1 rounded-full border border-border bg-bg/50 px-4 text-sm text-ink placeholder:text-ink-faint focus:border-brand focus:bg-surface focus:outline-none focus:ring-2 focus:ring-brand/20 disabled:opacity-60 transition-colors"
@@ -1137,7 +1171,9 @@ function MessagesInboxContent() {
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-ink-faint p-6 text-center">
-            Select a conversation from the sidebar to view messages.
+            {loading
+              ? "Loading conversations…"
+              : "Select a conversation from the sidebar to view messages."}
           </div>
         )}
       </div>
@@ -1150,7 +1186,7 @@ export function MessagesInbox() {
     <React.Suspense
       fallback={
         <div className="border border-border rounded-[var(--pb-radius-lg)] p-8 text-center text-sm text-ink-faint animate-pulse">
-          Loading messages...
+          Loading messages…
         </div>
       }
     >
