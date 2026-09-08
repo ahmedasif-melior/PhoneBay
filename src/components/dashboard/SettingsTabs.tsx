@@ -5,47 +5,54 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Card } from "@/components/ui/Card";
 import { Input, Label, Checkbox } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
 import type { UserRecord } from "@/server/types";
 
 const tabs = [
   { id: "account", label: "Account" },
   { id: "notifications", label: "Notifications" },
-  { id: "security", label: "Security" },
-  { id: "danger", label: "Danger Zone" },
 ];
 
-export function SettingsTabs({ user }: { user?: Partial<UserRecord> | null }) {
+type Preferences = UserRecord["notificationPreferences"];
+
+export function SettingsTabs({ user }: { user: UserRecord }) {
   const [active, setActive] = React.useState("account");
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [notif, setNotif] = React.useState({
-    listings: true,
-    messages: true,
-    marketing: false,
-    verification: true,
-  });
+  const [phone, setPhone] = React.useState(user.phone ?? "");
+  const [preferences, setPreferences] = React.useState<Preferences>(user.notificationPreferences);
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState("");
+
+  const save = async (payload: object) => {
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      setMessage(response.ok ? "Settings saved." : result.error ?? "Unable to save settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div>
       <Tabs tabs={tabs} active={active} onChange={setActive} variant="pill" />
-
       <div className="mt-6">
         {active === "account" && (
-          <Card className="flex flex-col gap-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <Label>Email</Label>
-                <Input defaultValue={user?.email ?? ""} type="email" readOnly />
+          <form className="flex flex-col gap-4" onSubmit={(event) => { event.preventDefault(); void save({ phone: phone || null }); }}>
+            <Card className="flex flex-col gap-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div><Label>Email</Label><Input value={user.email} type="email" readOnly /></div>
+                <div><Label>Phone Number</Label><Input value={phone} onChange={(event) => setPhone(event.target.value)} type="tel" placeholder="Add your phone number" /></div>
               </div>
-              <div>
-                <Label>Phone Number</Label>
-                <Input defaultValue={user?.phone ?? ""} type="tel" placeholder="Add your phone number" />
-              </div>
-            </div>
-            <Button className="self-start">Save Changes</Button>
-          </Card>
+              <p className="text-sm text-ink-soft">Account role: {user.role}</p>
+              <Button type="submit" className="self-start" loading={saving}>Save Changes</Button>
+            </Card>
+          </form>
         )}
-
         {active === "notifications" && (
           <Card className="flex flex-col gap-4">
             {[
@@ -56,55 +63,14 @@ export function SettingsTabs({ user }: { user?: Partial<UserRecord> | null }) {
             ].map(([key, label]) => (
               <label key={key} className="flex items-center justify-between gap-4 py-1.5">
                 <span className="text-sm text-ink">{label}</span>
-                <Checkbox
-                  checked={notif[key as keyof typeof notif]}
-                  onChange={(e) => setNotif((n) => ({ ...n, [key]: e.target.checked }))}
-                />
+                <Checkbox checked={preferences[key as keyof Preferences]} onChange={(event) => setPreferences((current) => ({ ...current, [key]: event.target.checked }))} />
               </label>
             ))}
+            <Button className="self-start" loading={saving} onClick={() => void save({ notificationPreferences: preferences })}>Save Preferences</Button>
           </Card>
         )}
-
-        {active === "security" && (
-          <Card className="flex flex-col gap-4">
-            <div>
-              <Label>Current Password</Label>
-              <Input type="password" placeholder="Enter your current password" />
-            </div>
-            <div>
-              <Label>New Password</Label>
-              <Input type="password" placeholder="Choose a new password" />
-            </div>
-            <Button className="self-start">Update Password</Button>
-          </Card>
-        )}
-
-        {active === "danger" && (
-          <Card className="border-danger/30">
-            <h3 className="font-semibold text-ink">Delete account</h3>
-            <p className="text-sm text-ink-soft mt-1.5">
-              Permanently delete your PhoneBay account and all associated listings. This cannot be undone.
-            </p>
-            <Button variant="danger" className="mt-4" onClick={() => setDeleteOpen(true)}>
-              Delete Account
-            </Button>
-          </Card>
-        )}
+        {message && <p className="mt-4 text-sm text-ink-soft" role="status">{message}</p>}
       </div>
-
-      <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete your account?">
-        <p className="text-sm text-ink-soft">
-          This will permanently delete your account, listings, and messages. This action can't be undone.
-        </p>
-        <div className="flex gap-3 justify-end mt-6">
-          <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-            Cancel
-          </Button>
-          <Button variant="danger" onClick={() => setDeleteOpen(false)}>
-            Delete Account
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }

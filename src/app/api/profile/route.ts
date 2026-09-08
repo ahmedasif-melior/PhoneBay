@@ -16,9 +16,11 @@ export async function PUT(req: NextRequest) {
   const next = parsed.data;
   const updatedUser = await usersRepo.update(user.id, {
     fullName: next.fullName ?? user.fullName,
+    phone: next.phone ?? user.phone,
     city: next.city ?? user.city,
     bio: next.bio ?? user.bio,
     accountPurpose: next.accountPurpose ?? user.accountPurpose,
+    notificationPreferences: next.notificationPreferences ?? user.notificationPreferences,
   });
 
   if (!updatedUser) return jsonError("Unable to update profile.", 500);

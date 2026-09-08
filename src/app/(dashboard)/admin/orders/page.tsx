@@ -1,18 +1,16 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { getCurrentUser, isAdminRole } from "@/server/http";
+import { AdminDataTable } from "@/components/dashboard/AdminDataTable";
+import { getAdminData } from "../_data";
 
 export const metadata: Metadata = { title: "Admin Orders" };
 
 export default async function AdminOrdersPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/admin/sign-in");
-  if (!isAdminRole(user.role)) redirect("/dashboard");
-
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold text-ink">Orders</h1>
-      <p className="mt-1 text-ink-soft">Buyer-seller order flow and fulfillment checkpoints.</p>
-    </div>
-  );
+  const { recentOrders } = await getAdminData();
+  return <AdminDataTable title="Orders" description="Buyer-seller order flow and fulfillment checkpoints." rows={recentOrders} columns={[
+    { label: "Listing", value: (order) => order.listing_name },
+    { label: "Buyer", value: (order) => order.buyer_name },
+    { label: "Seller", value: (order) => order.seller_name },
+    { label: "Status", value: (order) => order.status },
+    { label: "Price", value: (order) => `PKR ${order.price.toLocaleString()}` },
+  ]} />;
 }

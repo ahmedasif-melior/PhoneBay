@@ -14,16 +14,18 @@ export function PhoneCard({ phone }: { phone: ListingRecord | Phone }) {
   const isListing = "imageUrls" in phone;
   const [saved, setSaved] = React.useState(isListing ? false : phone.saved);
   const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isListing) return;
+    void fetch(`/api/listings/${phone.id}/save`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => { if (result) setSaved(Boolean(result.saved)); });
+  }, [isListing, phone.id]);
   const image = isListing ? phone.imageUrls[0] || "/images/phones/iphone-15.webp" : phone.image;
   const city = isListing ? phone.city : phone.location;
 
   const handleSaveToggle = async (event: React.MouseEvent) => {
     event.preventDefault();
-    if (!isListing) {
-      setSaved((current) => !current);
-      return;
-    }
-
     setSaving(true);
     try {
       const response = await fetch(`/api/listings/${phone.id}/save`, {

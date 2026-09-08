@@ -16,9 +16,16 @@ export const signInSchema = z.object({
 
 export const profileUpdateSchema = z.object({
   fullName: z.string().trim().min(2, "Please enter your full name.").optional(),
+  phone: z.string().trim().min(5, "Please enter a valid phone number.").optional().nullable(),
   city: z.string().trim().min(1, "City is required. ").optional().nullable(),
   bio: z.string().trim().max(500, "Bio is too long.").optional().nullable(),
   accountPurpose: z.enum(["buyer", "seller", "both", "shop"]).optional().nullable(),
+  notificationPreferences: z.object({
+    listings: z.boolean(),
+    messages: z.boolean(),
+    marketing: z.boolean(),
+    verification: z.boolean(),
+  }).optional(),
 });
 
 export const createListingSchema = z.object({
