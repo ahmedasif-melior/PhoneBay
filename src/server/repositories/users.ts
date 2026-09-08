@@ -21,6 +21,7 @@ type UserRow = {
   email_verified: boolean;
   phone_verified: boolean;
   trust_score: number;
+  notification_preferences: { listings: boolean; messages: boolean; marketing: boolean; verification: boolean };
   is_blocked: boolean;
   blocked_reason: string | null;
   blocked_at: string | null;
@@ -42,6 +43,7 @@ const mapRow = (r: UserRow): UserRecord => ({
   emailVerified: r.email_verified,
   phoneVerified: r.phone_verified,
   trustScore: r.trust_score,
+  notificationPreferences: r.notification_preferences,
   isBlocked: r.is_blocked,
   blockedReason: r.blocked_reason,
   blockedAt: r.blocked_at,
@@ -189,6 +191,7 @@ export const usersRepo = {
       isBlocked: boolean;
       blockedReason: string | null;
       accountPurpose: "buyer" | "seller" | "both" | "shop" | null;
+      notificationPreferences: { listings: boolean; messages: boolean; marketing: boolean; verification: boolean };
     }>,
   ) {
     const columnMap: Record<string, string> = {
@@ -205,6 +208,7 @@ export const usersRepo = {
       isBlocked: "is_blocked",
       blockedReason: "blocked_reason",
       accountPurpose: "account_purpose",
+      notificationPreferences: "notification_preferences",
     };
 
     const payload = Object.fromEntries(

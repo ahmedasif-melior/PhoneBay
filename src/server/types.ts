@@ -18,6 +18,7 @@ export interface UserRecord {
   emailVerified: boolean;
   phoneVerified: boolean;
   trustScore: number;
+  notificationPreferences: { listings: boolean; messages: boolean; marketing: boolean; verification: boolean };
   isBlocked: boolean;
   blockedReason: string | null;
   blockedAt: string | null;

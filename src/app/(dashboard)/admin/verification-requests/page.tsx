@@ -1,18 +1,15 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { getCurrentUser, isAdminRole } from "@/server/http";
+import { AdminDataTable } from "@/components/dashboard/AdminDataTable";
+import { getAdminData } from "../_data";
 
 export const metadata: Metadata = { title: "Admin Verification Requests" };
 
 export default async function AdminVerificationRequestsPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/admin/sign-in");
-  if (!isAdminRole(user.role)) redirect("/dashboard");
-
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold text-ink">Verification Requests</h1>
-      <p className="mt-1 text-ink-soft">Review queue, score tracking, and device certification status.</p>
-    </div>
-  );
+  const { verificationQueue } = await getAdminData();
+  return <AdminDataTable title="Verification Requests" description="Live device certification and review queue." rows={verificationQueue} columns={[
+    { label: "Device", value: (request) => `${request.brand} ${request.model}` },
+    { label: "Seller", value: (request) => request.seller_name },
+    { label: "Status", value: (request) => request.status },
+    { label: "Score", value: (request) => request.score ?? "Awaiting" },
+  ]} />;
 }

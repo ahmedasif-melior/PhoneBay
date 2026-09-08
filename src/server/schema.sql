@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
 
   trust_score NUMERIC NOT NULL DEFAULT 0,
+  notification_preferences JSONB NOT NULL DEFAULT '{"listings": true, "messages": true, "marketing": false, "verification": true}'::jsonb,
 
   is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
   blocked_reason TEXT,
@@ -291,9 +292,9 @@ CREATE TABLE IF NOT EXISTS public.messages (
 CREATE TABLE IF NOT EXISTS public.reviews (
   id TEXT PRIMARY KEY,
 
-  listing_id TEXT
+  listing_id TEXT NOT NULL
     REFERENCES public.listings(id)
-    ON DELETE SET NULL,
+    ON DELETE CASCADE,
 
   reviewer_id UUID NOT NULL
     REFERENCES public.users(id)
@@ -308,7 +309,25 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 
   comment TEXT,
 
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE (listing_id, reviewer_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.saved_listings (
+  id TEXT PRIMARY KEY,
+
+  user_id UUID NOT NULL
+    REFERENCES public.users(id)
+    ON DELETE CASCADE,
+
+  listing_id TEXT NOT NULL
+    REFERENCES public.listings(id)
+    ON DELETE CASCADE,
+
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE (user_id, listing_id)
 );
 
 
@@ -405,7 +424,21 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 
 
 -- ============================================================================
--- SECTION 15: ROW LEVEL SECURITY (RLS) ENABLE
+-- SECTION 15: EXISTING DATABASE UPDATES
+-- ============================================================================
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS notification_preferences JSONB NOT NULL DEFAULT '{"listings": true, "messages": true, "marketing": false, "verification": true}'::jsonb;
+
+CREATE UNIQUE INDEX IF NOT EXISTS reviews_listing_reviewer_unique
+ON public.reviews (listing_id, reviewer_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS saved_listings_user_listing_unique
+ON public.saved_listings (user_id, listing_id);
+
+
+-- ============================================================================
+-- SECTION 16: ROW LEVEL SECURITY (RLS) ENABLE
 -- ============================================================================
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -660,6 +693,32 @@ FOR INSERT
 WITH CHECK (
   auth.uid() = reviewer_id
 );
+
+
+-- SAVED LISTINGS
+
+ALTER TABLE public.saved_listings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their saved listings" ON public.saved_listings;
+
+CREATE POLICY "Users can view their saved listings"
+ON public.saved_listings
+FOR SELECT
+USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can save listings" ON public.saved_listings;
+
+CREATE POLICY "Users can save listings"
+ON public.saved_listings
+FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can remove saved listings" ON public.saved_listings;
+
+CREATE POLICY "Users can remove saved listings"
+ON public.saved_listings
+FOR DELETE
+USING (auth.uid() = user_id);
 
 
 -- CERTIFICATES

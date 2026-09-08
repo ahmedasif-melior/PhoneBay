@@ -13,6 +13,12 @@ export function BuyBox({ phone }: { phone: Phone }) {
   const router = useRouter();
   const [saved, setSaved] = React.useState(phone.saved);
   const [savePending, setSavePending] = React.useState(false);
+
+  React.useEffect(() => {
+    void fetch(`/api/listings/${phone.id}/save`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => { if (result) setSaved(Boolean(result.saved)); });
+  }, [phone.id]);
   const [buyOpen, setBuyOpen] = React.useState(false);
   const [messageOpen, setMessageOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
