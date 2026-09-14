@@ -80,7 +80,7 @@ export default async function ShopDashboardPage() {
                 <p className="text-sm text-ink-faint">{label}</p>
                 <p className="mt-2 font-data text-3xl font-semibold text-ink">{String(value)}</p>
               </div>
-              <span className="flex h-11 w-11 items-center justify-center rounded-[var(--pb-radius-sm)] bg-brand-tint text-brand">
+              <span className="flex h-11 w-11 items-center justify-center rounded-(--pb-radius-sm) bg-brand-tint text-brand">
                 <Icon className="h-5 w-5" />
               </span>
             </div>
@@ -99,7 +99,7 @@ export default async function ShopDashboardPage() {
             {jobs.length === 0 ? (
               <p className="text-sm text-ink-faint">No verification jobs right now.</p>
             ) : jobs.map((job) => (
-              <div key={job.id} className="flex flex-col gap-3 rounded-[var(--pb-radius-md)] border border-border bg-bg p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div key={job.id} className="flex flex-col gap-3 rounded-(--pb-radius-md) border border-border bg-bg p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-medium text-ink">{job.listingId}</p>
                   <p className="text-sm text-ink-faint">Requested {new Date(job.requestedAt).toLocaleDateString()}</p>
