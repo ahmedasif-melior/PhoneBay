@@ -48,6 +48,7 @@ type OrderRow = {
 type ShopRow = {
   id: string;
   shop_name: string;
+  shop_type?: string;
   owner_name: string;
   verified: number;
   services: string;
@@ -111,6 +112,7 @@ export function AdminConsole({
   };
 }) {
   const [listings, setListings] = React.useState(initialListings);
+  const [shops, setShops] = React.useState(initialShops);
   const [pending, setPending] = React.useState<Record<string, boolean>>({});
 
   const updateStatus = async (id: string, status: string) => {
@@ -128,6 +130,25 @@ export function AdminConsole({
       );
     } finally {
       setPending((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const updateShopStatus = async (shopId: string, status: "approved" | "rejected") => {
+    setPending((prev) => ({ ...prev, [shopId]: true }));
+    try {
+      const response = await fetch("/api/admin/shops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shopId, status }),
+      });
+      if (!response.ok) return;
+      setShops((prev) =>
+        prev.map((s) => (s.id === shopId ? { ...s, verified: status === "approved" ? 1 : 0 } : s))
+      );
+    } catch (err) {
+      console.error("Failed to update shop status:", err);
+    } finally {
+      setPending((prev) => ({ ...prev, [shopId]: false }));
     }
   };
 
@@ -323,17 +344,39 @@ export function AdminConsole({
           </div>
           <StageProgression title="Stage progression" stages={pipelines.shops} />
           <div className="mt-5 space-y-3">
-            {initialShops.length === 0 ? (
+            {shops.length === 0 ? (
               <p className="text-sm text-ink-faint">No shops registered yet.</p>
             ) : (
-              initialShops.map((shop) => (
+              shops.map((shop) => (
                 <div key={shop.id} className="rounded-[var(--pb-radius-md)] border border-border bg-bg p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-medium text-ink">{shop.shop_name}</p>
-                      <p className="text-xs text-ink-faint">Owner: {shop.owner_name} · {shop.city}</p>
+                      <p className="text-xs text-ink-faint">Owner: {shop.owner_name} · {shop.city} · {shop.shop_type === "new_phones" ? "New Phones Only" : "General Shop"}</p>
                     </div>
-                    <Badge tone={shop.verified ? "verify" : "warn"}>{shop.verified ? "Verified" : "Pending"}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge tone={shop.verified ? "verify" : "warn"}>{shop.verified ? "Verified" : "Pending"}</Badge>
+                      {!shop.verified && (
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <button
+                            type="button"
+                            onClick={() => updateShopStatus(shop.id, "approved")}
+                            disabled={pending[shop.id]}
+                            className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-dark transition disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateShopStatus(shop.id, "rejected")}
+                            disabled={pending[shop.id]}
+                            className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface transition disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className="mt-2 text-sm text-ink-soft">{shop.services || "No service list added yet."}</p>
                 </div>

@@ -79,102 +79,93 @@ export default async function SalesPage() {
 
   const db = getAdminDb();
 
-  const { data, error } = await db
-    .from("orders")
-    .select(
-      `
-        id,
-        price,
-        status,
-        created_at,
-        buyer_id,
-        listings!inner (
-          model,
-          seller_id
-        )
-      `,
-    )
-    .eq("listings.seller_id", user.id)
-    .order("created_at", {
-      ascending: false,
-    });
+  // 1. Fetch orders where user is the seller
+  const [ordersResult, soldListings] = await Promise.all([
+    db
+      .from("orders")
+      .select("id, price, status, created_at, buyer_id, listing_id")
+      .eq("seller_id", user.id)
+      .order("created_at", { ascending: false }),
+    db
+      .from("listings")
+      .select("id, model, brand, price, created_at, status")
+      .eq("seller_id", user.id)
+      .eq("status", "sold")
+      .order("created_at", { ascending: false }),
+  ]);
 
-  if (error) {
-    console.error(
-      "[SALES] Failed to load sales:",
-      error.message,
-    );
+  const ordersData = (ordersResult.data ?? []) as Array<{
+    id: string;
+    price: number;
+    status: keyof typeof statusConfig;
+    created_at: string;
+    buyer_id: string;
+    listing_id: string;
+  }>;
+
+  const soldListingsData = (soldListings.data ?? []) as Array<{
+    id: string;
+    model: string;
+    brand: string;
+    price: number;
+    created_at: string;
+    status: string;
+  }>;
+
+  // Fetch listing details for orders
+  const orderListingIds = [...new Set(ordersData.map((o) => o.listing_id).filter(Boolean))];
+  const listingsMap = new Map<string, string>();
+  if (orderListingIds.length > 0) {
+    const { data: listings } = await db
+      .from("listings")
+      .select("id, model")
+      .in("id", orderListingIds);
+    (listings ?? []).forEach((l: any) => listingsMap.set(l.id, l.model));
   }
 
-  const rows = (data ?? []) as Array<
-    SaleRow & {
-      listings:
-        | {
-            model: string;
-            seller_id: string;
-          }
-        | {
-            model: string;
-            seller_id: string;
-          }[];
-    }
-  >;
-
-  const buyerIds = [
-    ...new Set(
-      rows
-        .map((row) => row.buyer_id)
-        .filter(Boolean),
-    ),
-  ];
-
+  // Fetch buyer names cleanly from public.users table
+  const buyerIds = [...new Set(ordersData.map((o) => o.buyer_id).filter(Boolean))];
   const buyerNames = new Map<string, string>();
+  if (buyerIds.length > 0) {
+    const { data: buyers } = await db
+      .from("users")
+      .select("id, full_name, email")
+      .in("id", buyerIds);
+    (buyers ?? []).forEach((b: any) => {
+      buyerNames.set(b.id, b.full_name?.trim() || b.email || "Buyer");
+    });
+  }
 
-  await Promise.all(
-    buyerIds.map(async (buyerId) => {
-      try {
-        const {
-          data: { user: buyer },
-          error: buyerError,
-        } = await db.auth.admin.getUserById(buyerId);
+  const existingOrderListingIds = new Set(ordersData.map((o) => o.listing_id));
 
-        if (buyerError || !buyer) {
-          return;
-        }
-
-        const fullName =
-          typeof buyer.user_metadata?.full_name === "string"
-            ? buyer.user_metadata.full_name.trim()
-            : "";
-
-        buyerNames.set(
-          buyerId,
-          fullName || buyer.email || "Buyer",
-        );
-      } catch (error) {
-        console.error(
-          `[SALES] Failed to load buyer ${buyerId}:`,
-          error,
-        );
-      }
-    }),
-  );
-
-  const sales = rows.map((row) => {
-    const listing = Array.isArray(row.listings)
-      ? row.listings[0]
-      : row.listings;
-
-    return {
-      id: row.id,
-      price: Number(row.price),
-      status: row.status,
-      created_at: row.created_at,
-      model: listing?.model ?? "Phone",
-      buyer:
-        buyerNames.get(row.buyer_id) ?? "Buyer",
-    };
-  });
+  // Combine order-based sales with directly sold listings
+  const sales: Array<{
+    id: string;
+    price: number;
+    status: keyof typeof statusConfig;
+    created_at: string;
+    model: string;
+    buyer: string;
+  }> = [
+    ...ordersData.map((order) => ({
+      id: order.id,
+      price: Number(order.price),
+      status: (statusConfig[order.status] ? order.status : "processing") as keyof typeof statusConfig,
+      created_at: order.created_at,
+      model: listingsMap.get(order.listing_id) ?? "Phone",
+      buyer: buyerNames.get(order.buyer_id) ?? "Buyer",
+    })),
+    ...soldListingsData
+      .filter((l) => !existingOrderListingIds.has(l.id))
+      .map((listing) => ({
+        id: `DIRECT-${listing.id.slice(0, 8)}`,
+        price: Number(listing.price),
+        status: "delivered" as const,
+        created_at: listing.created_at,
+        model: listing.model,
+        buyer: "Direct Buyer / Meetup",
+      })),
+  ];
 
   return (
     <div>

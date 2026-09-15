@@ -47,6 +47,10 @@ export async function GET(req: NextRequest) {
 
       sellerId: params.get("sellerId") ?? undefined,
 
+      listingType:
+        (params.get("listingType") as ListingFilters["listingType"]) ??
+        undefined,
+
       sort:
         (params.get("sort") as ListingFilters["sort"]) ??
         "recommended",
@@ -90,6 +94,16 @@ export async function POST(req: NextRequest) {
 
     const { requestVerification: _requestVerification, ...listingInput } =
       parsed.data;
+
+    // Only shop accounts may list brand-new phones (the marketplace's
+    // "New Phones" category). Regular USER accounts are always forced
+    // to the used/peer-to-peer flow regardless of what was submitted.
+    if (listingInput.listingType === "new" && user.role !== "SHOP") {
+      return jsonError(
+        "Only shop accounts can list brand-new phones. Convert your account to a shop to sell new phones.",
+        403,
+      );
+    }
 
     const listing = await listingsRepo.create({
       sellerId: user.id,

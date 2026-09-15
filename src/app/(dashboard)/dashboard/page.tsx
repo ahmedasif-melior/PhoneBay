@@ -73,11 +73,14 @@ export default async function DashboardOverviewPage() {
   ] = await Promise.all([
     listingsRepo.countBySeller(user.id),
 
-    listingsRepo.list({
-      sellerId: user.id,
-      status: undefined,
-      sort: "newest",
-    }),
+    listingsRepo.list(
+      {
+        sellerId: user.id,
+        status: undefined,
+        sort: "newest",
+      },
+      true,
+    ),
 
     db
       .from("saved_listings")

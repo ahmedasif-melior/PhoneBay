@@ -12,6 +12,8 @@ export interface Filters {
   locations: string[];
   verifiedOnly: boolean;
   sellerType: "" | "individual" | "shop";
+  /** Marketplace category: "" = both, "new" = New Phones (shops only), "used" = used/refurbished. */
+  category: "" | "new" | "used";
   minPrice: number;
   maxPrice: number;
 }
@@ -22,6 +24,7 @@ export const defaultFilters: Filters = {
   locations: [],
   verifiedOnly: false,
   sellerType: "",
+  category: "",
   minPrice: MIN_PRICE,
   maxPrice: MAX_PRICE,
 };
@@ -47,6 +50,20 @@ export function FilterPanel({
 
   return (
     <div className="flex flex-col gap-7">
+      <FilterGroup title="Category">
+        {([
+          ["new", "New Phones (shops)"],
+          ["used", "Used Phones"],
+        ] as const).map(([value, label]) => (
+          <CheckRow
+            key={value}
+            label={label}
+            checked={filters.category === value}
+            onChange={() => onChange({ ...filters, category: filters.category === value ? "" : value })}
+          />
+        ))}
+      </FilterGroup>
+
       <FilterGroup title="Brand">
         {brands.map((b) => (
           <CheckRow key={b} label={b} checked={filters.brands.includes(b)} onChange={() => toggle("brands", b)} />

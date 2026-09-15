@@ -64,6 +64,8 @@ export function SignUpForm({ audience = "user", signInPath, successPath }: SignU
     const password = String(data.get("password") || "");
     const confirm = String(data.get("confirmPassword") || "");
     const agree = data.get("agree");
+    const shopCity = String(data.get("shopCity") || "");
+    const shopType = String(data.get("shopType") || "general");
 
     const next: Record<string, string> = {};
     if (!fullName.trim()) next.fullName = audience === "shop" ? "Please enter your business name." : "Please enter your full name.";
@@ -84,7 +86,14 @@ export function SignUpForm({ audience = "user", signInPath, successPath }: SignU
         email,
         phone: String(data.get("phone") || "") || null,
         password,
-        role: audience === "shop" ? "SHOP" : "USER",
+        accountPurpose: audience === "shop" ? "shop" : undefined,
+        ...(audience === "shop"
+          ? {
+              shopName: fullName,
+              shopCity: shopCity || null,
+              shopType,
+            }
+          : {}),
       }),
     });
     const result = await response.json().catch(() => ({}));
@@ -125,6 +134,31 @@ export function SignUpForm({ audience = "user", signInPath, successPath }: SignU
           <Label htmlFor="phone">Phone Number (optional)</Label>
           <Input id="phone" name="phone" type="tel" leadingIcon={<Phone className="h-4 w-4" />} placeholder="+92 3XX XXX XXXX" />
         </div>
+        {audience === "shop" && (
+          <>
+            <div>
+              <Label htmlFor="shopCity">City (optional)</Label>
+              <Input id="shopCity" name="shopCity" placeholder="e.g. Islamabad" />
+            </div>
+            <div>
+              <Label htmlFor="shopType" required>
+                Shop Type
+              </Label>
+              <select
+                id="shopType"
+                name="shopType"
+                defaultValue="general"
+                className="w-full rounded-(--pb-radius-sm) border border-line bg-surface px-3.5 py-2.5 text-sm text-ink"
+              >
+                <option value="general">General — buy &amp; sell new and used phones</option>
+                <option value="new_phones">New Phones Only — sell brand-new stock</option>
+              </select>
+              <p className="mt-1.5 text-[13px] text-ink-faint">
+                New Phones Only shops list under the marketplace&apos;s New Phones category.
+              </p>
+            </div>
+          </>
+        )}
         <div>
           <Label htmlFor="password" required>
             Password

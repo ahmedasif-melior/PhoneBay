@@ -6,6 +6,10 @@ export const signUpSchema = z.object({
   phone: z.string().trim().optional().nullable(),
   password: z.string().min(8, "Password must be at least 8 characters."),
   accountPurpose: z.enum(["buyer", "seller", "both", "shop"]).optional().nullable(),
+  // Optional shop details, only used when accountPurpose === "shop".
+  shopName: z.string().trim().min(2, "Please enter a shop name.").optional().nullable(),
+  shopCity: z.string().trim().optional().nullable(),
+  shopType: z.enum(["general", "new_phones"]).optional().nullable(),
 });
 
 export const signInSchema = z.object({
@@ -33,7 +37,11 @@ export const createListingSchema = z.object({
   model: z.string().trim().min(1),
   storage: z.string().trim().min(1),
   color: z.string().trim().optional().nullable(),
-  condition: z.enum(["Excellent", "Good", "Fair"]),
+  condition: z.enum(["New", "Excellent", "Good", "Fair"]),
+  // "new" = brand-new phone sold by a shop (Marketplace "New Phones"
+  // category). Only SHOP accounts may create listingType "new" listings;
+  // enforced in the API route, not here, since it depends on the caller.
+  listingType: z.enum(["used", "new"]).default("used"),
   price: z.number().int().positive(),
   negotiable: z.boolean().default(true),
   city: z.string().trim().min(1),
@@ -49,9 +57,17 @@ export const createListingSchema = z.object({
 export const updateListingSchema = z.object({
   price: z.number().int().positive().optional(),
   negotiable: z.boolean().optional(),
-  condition: z.enum(["Excellent", "Good", "Fair"]).optional(),
+  condition: z.enum(["New", "Excellent", "Good", "Fair"]).optional(),
   description: z.string().trim().optional(),
   status: z.enum(["active", "pending", "sold", "draft", "paused"]).optional(),
+});
+
+export const convertToShopSchema = z.object({
+  shopName: z.string().trim().min(2, "Please enter a shop name."),
+  shopEmail: z.string().trim().email("Please enter a valid email.").optional().nullable(),
+  city: z.string().trim().optional().nullable(),
+  shopType: z.enum(["general", "new_phones"]).default("general"),
+  services: z.string().trim().max(500).optional().nullable(),
 });
 
 export const createOrderSchema = z.object({

@@ -145,6 +145,60 @@ CREATE TABLE IF NOT EXISTS public.shops (
 
 
 -- ============================================================================
+-- SECTION 4b: SHOPS - ADDITIONAL COLUMNS
+-- FIX: repositories/shops.ts + seed.ts previously targeted a
+-- "shop_profiles" table that was never defined anywhere in this schema,
+-- so every shop signup/read/write failed against the real database.
+-- The application now targets this public.shops table directly, so it
+-- needs a few columns the original table didn't have: a dedicated shop
+-- contact email, a free-text description of services offered, admin
+-- verification notes/reviewer, and a shop_type so we can distinguish
+-- shops that only sell brand-new phones from general (new + used,
+-- buy + sell) shops.
+-- ============================================================================
+
+ALTER TABLE public.shops
+  ADD COLUMN IF NOT EXISTS shop_email TEXT,
+  ADD COLUMN IF NOT EXISTS services TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS verification_notes TEXT,
+  ADD COLUMN IF NOT EXISTS verified_by_admin_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS shop_type TEXT NOT NULL DEFAULT 'general';
+
+DO $$
+BEGIN
+  ALTER TABLE public.shops
+    ADD CONSTRAINT shops_shop_type_check
+    CHECK (shop_type IN ('general', 'new_phones'));
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END
+$$;
+
+-- One shop per owner account. The "convert my account to a shop" flow
+-- and the shop signup flow both rely on there being at most one shop
+-- row per owner_id.
+DO $$
+BEGIN
+  ALTER TABLE public.shops
+    ADD CONSTRAINT shops_owner_id_unique
+    UNIQUE (owner_id);
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END
+$$;
+
+-- City is required by the original table definition, but neither the
+-- shop signup form nor the convert-to-shop flow currently collect it
+-- up front (it can be filled in from the shop's profile afterwards),
+-- so it shouldn't block account creation.
+ALTER TABLE public.shops
+  ALTER COLUMN city DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS shops_shop_email_idx ON public.shops (shop_email);
+CREATE INDEX IF NOT EXISTS shops_shop_type_idx ON public.shops (shop_type);
+
+
+-- ============================================================================
 -- SECTION 5: USERS -> SHOPS FOREIGN KEY
 -- Must be added after shops exists because shops also references users.
 -- ============================================================================
@@ -202,9 +256,26 @@ CREATE TABLE IF NOT EXISTS public.listings (
 
   views INTEGER NOT NULL DEFAULT 0,
 
+  -- 'new' listings are brand-new phones sold by a shop (shops.shop_type
+  -- can be 'new_phones' or 'general'); 'used' is the existing peer-to-peer
+  -- / refurbished flow. Drives the "New Phones" marketplace category.
+  listing_type TEXT NOT NULL DEFAULT 'used',
+
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+DO $$
+BEGIN
+  ALTER TABLE public.listings
+    ADD CONSTRAINT listings_listing_type_check
+    CHECK (listing_type IN ('used', 'new'));
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS listings_listing_type_idx ON public.listings (listing_type);
 
 
 -- ============================================================================
@@ -422,6 +493,12 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS notification_preferences JSONB NOT NULL DEFAULT '{"listings": true, "messages": true, "marketing": false, "verification": true}'::jsonb;
+
+-- Safety net for already-deployed databases: CREATE TABLE IF NOT EXISTS
+-- above is a no-op once the table exists, so listing_type needs its own
+-- ADD COLUMN IF NOT EXISTS to reach existing installs.
+ALTER TABLE public.listings
+  ADD COLUMN IF NOT EXISTS listing_type TEXT NOT NULL DEFAULT 'used';
 
 CREATE UNIQUE INDEX IF NOT EXISTS reviews_listing_reviewer_unique
 ON public.reviews (listing_id, reviewer_id);

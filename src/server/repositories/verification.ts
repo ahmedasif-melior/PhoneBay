@@ -108,7 +108,7 @@ export const verificationRepo = {
 
   async findById(id: string) {
     const r = await queryOne<V>(
-      getDb()
+      getAdminDb()
         .from("verification_requests")
         .select("*")
         .eq("id", id)
@@ -121,7 +121,7 @@ export const verificationRepo = {
   async listByListing(id: string) {
     return (
       await queryRows<V>(
-        getDb()
+        getAdminDb()
           .from("verification_requests")
           .select("*")
           .eq("listing_id", id)
@@ -135,7 +135,7 @@ export const verificationRepo = {
   async listPending() {
     return (
       await queryRows<V>(
-        getDb()
+        getAdminDb()
           .from("verification_requests")
           .select("*")
           .neq("status", "completed")

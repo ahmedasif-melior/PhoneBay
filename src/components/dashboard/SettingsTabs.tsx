@@ -53,6 +53,17 @@ export function SettingsTabs({ user }: { user: UserRecord }) {
             </Card>
           </form>
         )}
+        {active === "account" && user.role === "USER" && (
+          <Card className="mt-4 flex flex-col gap-2">
+            <h3 className="text-sm font-semibold text-ink">Sell as a shop</h3>
+            <p className="text-sm text-ink-soft">
+              Register a shop under this account to list inventory, offer testing/buyback, and appear in the marketplace as a verified shop.
+            </p>
+            <a href="/dashboard/become-a-shop" className="self-start">
+              <Button variant="outline" className="mt-1">Become a Shop</Button>
+            </a>
+          </Card>
+        )}
         {active === "notifications" && (
           <Card className="flex flex-col gap-4">
             {[

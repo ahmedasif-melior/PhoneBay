@@ -90,6 +90,15 @@ export function MarketplaceBrowser({
         return false;
       }
 
+      // Category: New Phones (shops) vs Used Phones.
+      // ListingRecord.listingType defaults to "used" when absent (older rows).
+      if (
+        filters.category &&
+        (p.listingType ?? "used") !== filters.category
+      ) {
+        return false;
+      }
+
       // Price
       if (
         p.price < filters.minPrice ||

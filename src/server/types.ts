@@ -3,7 +3,9 @@ export type AccountPurpose = "buyer" | "seller" | "both" | "shop" | null;
 export type ListingStatus = "active" | "pending" | "sold" | "draft" | "paused";
 export type VerificationStatus = "pending" | "in_progress" | "completed";
 export type OrderStatus = "processing" | "shipped" | "delivered" | "cancelled";
-export type ShopVerificationStatus = "pending" | "approved" | "rejected";
+export type ShopVerificationStatus = "pending" | "approved" | "rejected" | "expired";
+export type ShopType = "general" | "new_phones";
+export type ListingType = "used" | "new";
 
 export interface UserRecord {
   id: string; // UUID from auth.users
@@ -29,14 +31,25 @@ export interface UserRecord {
 
 export interface ShopProfileRecord {
   id: string;
+  ownerId: string;
   shopName: string;
-  shopEmail: string;
+  shopEmail: string | null;
+  description: string | null;
+  logoUrl: string | null;
+  bannerUrl: string | null;
+  city: string | null;
+  area: string | null;
+  phone: string | null;
+  website: string | null;
+  shopType: ShopType;
   verified: boolean;
   verificationStatus: ShopVerificationStatus;
   services: string;
   verificationNotes: string | null;
   verifiedAt: string | null;
   verifiedByAdminId: string | null;
+  rating: number | null;
+  totalReviews: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +78,7 @@ export interface ListingRecord {
   verified: boolean;
   score: number | null;
   views: number;
+  listingType: ListingType;
   createdAt: string;
   updatedAt: string;
 }

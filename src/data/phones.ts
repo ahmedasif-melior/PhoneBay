@@ -9,7 +9,7 @@ export interface Phone {
   model: string;
   storage: string;
   color: string;
-  condition: "Excellent" | "Good" | "Fair";
+  condition: "New" | "Excellent" | "Good" | "Fair";
   price: number;
   negotiable: boolean;
   location: string;
@@ -20,6 +20,8 @@ export interface Phone {
   batteryHealth: number;
   sellerId: string;
   sellerType: "individual" | "shop";
+  /** "new" = brand-new phone from a shop (Marketplace "New Phones" category); defaults to "used" when omitted. */
+  listingType?: "used" | "new";
   views: number;
   messages: number;
   saved: boolean;
@@ -300,6 +302,72 @@ export const phones: Phone[] = [
     ],
     certificateId: "PB-118804",
   },
+  {
+    id: "galaxy-s24-ultra-512-new-karachi",
+    brand: "Samsung",
+    model: "Galaxy S24 Ultra",
+    storage: "512GB",
+    color: "Titanium Black",
+    condition: "New",
+    price: 245000,
+    negotiable: false,
+    location: "Karachi",
+    image: "/images/phones/galaxy-s24-ultra.jpg",
+    images: ["/images/phones/galaxy-s24-ultra.jpg"],
+    verified: true,
+    score: 10,
+    batteryHealth: 100,
+    sellerId: "shop-karachi-mobile-hub",
+    sellerType: "shop",
+    listingType: "new",
+    views: 0,
+    messages: 0,
+    saved: false,
+    status: "active",
+    postedDate: new Date().toISOString(),
+    description: "Brand-new, sealed-box Galaxy S24 Ultra from Karachi Mobile Hub, an official New Phones shop. Full manufacturer warranty.",
+    specs: [
+      { label: "Chip", value: "Snapdragon 8 Gen 3" },
+      { label: "Storage", value: "512GB" },
+      { label: "Camera", value: "200MP Quad" },
+      { label: "Battery", value: "5,000 mAh" },
+      { label: "5G", value: "Yes" },
+    ],
+    testResults: [],
+  },
+  {
+    id: "iphone-16-256-new-karachi",
+    brand: "Apple",
+    model: "iPhone 16",
+    storage: "256GB",
+    color: "Black Titanium",
+    condition: "New",
+    price: 285000,
+    negotiable: false,
+    location: "Karachi",
+    image: "/images/phones/iphone-16.jpg",
+    images: ["/images/phones/iphone-16.jpg"],
+    verified: true,
+    score: 10,
+    batteryHealth: 100,
+    sellerId: "shop-karachi-mobile-hub",
+    sellerType: "shop",
+    listingType: "new",
+    views: 0,
+    messages: 0,
+    saved: false,
+    status: "active",
+    postedDate: new Date().toISOString(),
+    description: "Brand-new, sealed-box iPhone 16 from Karachi Mobile Hub, an official New Phones shop. Full manufacturer warranty.",
+    specs: [
+      { label: "Chip", value: "A18" },
+      { label: "Storage", value: "256GB" },
+      { label: "Camera", value: "48MP Dual" },
+      { label: "Battery", value: "3,561 mAh" },
+      { label: "5G", value: "Yes" },
+    ],
+    testResults: [],
+  },
 ];
 
 export function getPhoneById(id: string) {
@@ -307,5 +375,5 @@ export function getPhoneById(id: string) {
 }
 
 export const brands = ["Apple", "Samsung", "Google", "OnePlus"];
-export const conditions = ["Excellent", "Good", "Fair"];
+export const conditions = ["New", "Excellent", "Good", "Fair"];
 export const locations = ["Islamabad", "Lahore", "Karachi", "Rawalpindi"];

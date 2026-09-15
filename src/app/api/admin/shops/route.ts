@@ -23,6 +23,8 @@ export async function GET() {
         id: shop.id,
         shopName: shop.shopName,
         shopEmail: shop.shopEmail,
+        city: shop.city,
+        shopType: shop.shopType,
         verified: shop.verified,
         verificationStatus: shop.verificationStatus,
         services: shop.services,
@@ -58,7 +60,9 @@ export async function POST(req: NextRequest) {
     // Update shop verification status
     const updatedShop = await shopsRepo.updateVerificationStatus(shopId, status, adminUser.id, notes);
 
-
+    if (status === "approved" && shop.ownerId) {
+      await usersRepo.update(shop.ownerId, { role: "SHOP" });
+    }
 
     auditLogsRepo.log({
       adminId: adminUser.id,

@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
       phone,
       password,
       accountPurpose,
+      shopName,
+      shopCity,
+      shopType,
     } = parsed.data;
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -178,8 +181,11 @@ export async function POST(req: NextRequest) {
       user = roleUpdated;
 
       const shopProfile = await shopsRepo.create({
-        shopName: fullName,
+        ownerId: user.id,
+        shopName: shopName?.trim() || `${fullName}'s Shop`,
         shopEmail: normalizedEmail,
+        city: shopCity ?? null,
+        shopType: shopType ?? "general",
       });
 
       const linkedUser = await usersRepo.update(user.id, {

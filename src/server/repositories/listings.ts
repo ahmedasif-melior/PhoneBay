@@ -32,6 +32,7 @@ type Row = {
   verified: boolean;
   score: number | null;
   views: number;
+  listing_type: "used" | "new";
   created_at: string;
   updated_at: string;
 };
@@ -57,6 +58,7 @@ const map = (r: Row): ListingRecord => ({
   verified: r.verified,
   score: r.score,
   views: r.views,
+  listingType: r.listing_type,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -71,6 +73,8 @@ export interface ListingFilters {
   maxPrice?: number;
   sellerId?: string;
   status?: ListingStatus | ListingStatus[];
+  /** "new" = brand-new phones from shops (Marketplace "New Phones" category), "used" = the peer-to-peer/refurbished flow. Omit for both. */
+  listingType?: "used" | "new";
   sort?: "recommended" | "newest" | "price-asc" | "price-desc";
 }
 
@@ -99,7 +103,7 @@ export const listingsRepo = {
    * Reads remain subject to RLS unless trusted (admin) is set.
    */
   async list(f: ListingFilters = {}, trusted = false) {
-    let q = (trusted ? getAdminDb() : getDb())
+    let q = (trusted || Boolean(f.sellerId) ? getAdminDb() : getDb())
       .from("listings")
       .select("*");
 
@@ -136,6 +140,10 @@ export const listingsRepo = {
 
     if (f.verifiedOnly) {
       q = q.eq("verified", true);
+    }
+
+    if (f.listingType) {
+      q = q.eq("listing_type", f.listingType);
     }
 
     if (f.minPrice !== undefined) {
@@ -197,6 +205,7 @@ export const listingsRepo = {
     photoCount?: number;
     imageUrls?: string[];
     status?: ListingStatus;
+    listingType?: "used" | "new";
   }) {
     if (!i.sellerId) {
       throw new Error(
@@ -232,6 +241,8 @@ export const listingsRepo = {
             i.imageUrls ?? [],
           status:
             i.status ?? "active",
+          listing_type:
+            i.listingType ?? "used",
         })
         .select()
         .single(),
@@ -350,9 +361,12 @@ export const listingsRepo = {
    * Count listings belonging to a seller.
    */
   async countBySeller(sellerId: string) {
-    const rows = await this.list({
-      sellerId,
-    });
+    const rows = await this.list(
+      {
+        sellerId,
+      },
+      true,
+    );
 
     const out = {
       active: 0,

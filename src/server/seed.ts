@@ -1,10 +1,13 @@
-import bcrypt from "bcryptjs";
 import { generateId, getAdminDb } from "@/server/db";
 
 /**
  * Seeds demo data into Supabase when the users table is empty.
- * Authentication itself is intentionally not created here; Supabase Auth
- * should remain the source of truth for login identities.
+ *
+ * public.users.id is a foreign key to auth.users(id), and there is no
+ * password_hash column on public.users — Supabase Auth is the source of
+ * truth for credentials (see handle_new_user() trigger + /api/auth/signup).
+ * So seed users must be created through supabase.auth.admin.createUser(),
+ * the same as a real signup, rather than inserted directly.
  */
 export async function seedIfEmpty() {
   const db = getAdminDb();
@@ -15,70 +18,106 @@ export async function seedIfEmpty() {
   if (countError) throw new Error(countError.message);
   if ((count ?? 0) > 0) return;
 
-  const passwordHash = bcrypt.hashSync(
-    process.env.ADMIN_PASSWORD ?? "PhoneBayAdmin!2026",
-    10,
-  );
+  const seedPassword = process.env.SEED_PASSWORD ?? process.env.ADMIN_PASSWORD ?? "PhoneBayDemo!2026";
+  const adminEmail = process.env.ADMIN_EMAIL ?? "ahmed.asif@devsatmelior.com";
 
-  const adminEmail =
-    process.env.ADMIN_EMAIL ?? "ahmed.asif@devsatmelior.com";
+  type SeedUser = {
+    key: string;
+    email: string;
+    fullName: string;
+    city: string;
+    role: "USER" | "SHOP" | "ADMIN";
+    accountPurpose: "buyer" | "seller" | "both" | "shop" | null;
+  };
 
-  const shops = [
-    { id: generateId("shp_"), name: "Ahmed Mobile Store", email: "ahmed@ahmedmobile.pk", city: "Islamabad" },
-    { id: generateId("shp_"), name: "Karachi Mobile Hub", email: "hub@karachimobile.pk", city: "Karachi" },
-    { id: generateId("shp_"), name: "Lahore Phone Gallery", email: "gallery@lahorephones.pk", city: "Lahore" },
+  const shopSeeds = [
+    { key: "ahmed", name: "Ahmed Mobile Store", email: "ahmed@ahmedmobile.pk", city: "Islamabad", type: "general" as const },
+    { key: "karachi", name: "Karachi Mobile Hub", email: "hub@karachimobile.pk", city: "Karachi", type: "new_phones" as const },
+    { key: "lahore", name: "Lahore Phone Gallery", email: "gallery@lahorephones.pk", city: "Lahore", type: "general" as const },
   ];
 
-  const { error: shopError } = await db.from("shop_profiles").insert(
+  const seedUsers: SeedUser[] = [
+    { key: "ahmed", email: shopSeeds[0].email, fullName: shopSeeds[0].name, city: shopSeeds[0].city, role: "SHOP", accountPurpose: "shop" },
+    { key: "sana", email: "sana.tariq@example.com", fullName: "Sana Tariq", city: "Lahore", role: "USER", accountPurpose: "seller" },
+    { key: "karachi", email: shopSeeds[1].email, fullName: shopSeeds[1].name, city: shopSeeds[1].city, role: "SHOP", accountPurpose: "shop" },
+    { key: "bilal", email: "bilal.hassan@example.com", fullName: "Bilal Hassan", city: "Rawalpindi", role: "USER", accountPurpose: "buyer" },
+    { key: "lahore", email: shopSeeds[2].email, fullName: shopSeeds[2].name, city: shopSeeds[2].city, role: "SHOP", accountPurpose: "shop" },
+    { key: "admin", email: adminEmail, fullName: "PhoneBay Admin", city: "Islamabad", role: "ADMIN", accountPurpose: null },
+    { key: "demo", email: "demo@phonebay.com", fullName: "Ahmed Khan", city: "Islamabad", role: "USER", accountPurpose: "both" },
+  ];
+
+  const idByKey: Record<string, string> = {};
+
+  for (const su of seedUsers) {
+    const { data, error } = await db.auth.admin.createUser({
+      email: su.email,
+      password: seedPassword,
+      email_confirm: true,
+      user_metadata: { full_name: su.fullName },
+    });
+    if (error || !data.user) {
+      throw new Error(`[SEED] Failed to create auth user ${su.email}: ${error?.message}`);
+    }
+    idByKey[su.key] = data.user.id;
+
+    // The handle_new_user() trigger creates the public.users row with
+    // role USER / account_purpose null; patch in the seed's role/purpose/city.
+    const { error: updateError } = await db
+      .from("users")
+      .update({
+        city: su.city,
+        role: su.role,
+        account_purpose: su.accountPurpose,
+        email_verified: true,
+        phone_verified: true,
+        trust_score: 8.8,
+      })
+      .eq("id", data.user.id);
+    if (updateError) throw new Error(updateError.message);
+  }
+
+  const shops = shopSeeds.map((s) => ({ ...s, id: generateId("shp_"), ownerId: idByKey[s.key] }));
+
+  const { error: shopError } = await db.from("shops").insert(
     shops.map((shop) => ({
       id: shop.id,
-      shop_name: shop.name,
+      owner_id: shop.ownerId,
+      name: shop.name,
       shop_email: shop.email,
-      verified: true,
+      city: shop.city,
+      shop_type: shop.type,
       verification_status: "approved",
+      verified_at: new Date().toISOString(),
       services: "Device Testing,Certification,Repairs,Trade-In",
       is_active: true,
     })),
   );
   if (shopError) throw new Error(shopError.message);
 
-  const users = [
-    { id: generateId("usr_"), email: shops[0].email, full_name: shops[0].name, city: shops[0].city, role: "SHOP", shop_id: shops[0].id },
-    { id: generateId("usr_"), email: "sana.tariq@example.com", full_name: "Sana Tariq", city: "Lahore", role: "USER", shop_id: null },
-    { id: generateId("usr_"), email: shops[1].email, full_name: shops[1].name, city: shops[1].city, role: "SHOP", shop_id: shops[1].id },
-    { id: generateId("usr_"), email: "bilal.hassan@example.com", full_name: "Bilal Hassan", city: "Rawalpindi", role: "USER", shop_id: null },
-    { id: generateId("usr_"), email: shops[2].email, full_name: shops[2].name, city: shops[2].city, role: "SHOP", shop_id: shops[2].id },
-    { id: generateId("usr_"), email: adminEmail, full_name: "PhoneBay Admin", city: "Islamabad", role: "ADMIN", shop_id: null },
-    { id: generateId("usr_"), email: "demo@phonebay.com", full_name: "Ahmed Khan", city: "Islamabad", role: "USER", shop_id: null },
-  ];
-
-  const { error: userError } = await db.from("users").insert(
-    users.map((user) => ({
-      ...user,
-      password_hash: passwordHash,
-      email_verified: true,
-      phone_verified: true,
-      trust_score: 8.8,
-      is_blocked: false,
-    })),
-  );
-  if (userError) throw new Error(userError.message);
+  for (const shop of shops) {
+    const { error } = await db.from("users").update({ shop_id: shop.id }).eq("id", shop.ownerId);
+    if (error) throw new Error(error.message);
+  }
 
   const sellerIds = {
-    ahmed: users[0].id,
-    sana: users[1].id,
-    karachi: users[2].id,
-    bilal: users[3].id,
-    lahore: users[4].id,
+    ahmed: idByKey.ahmed,
+    sana: idByKey.sana,
+    karachi: idByKey.karachi,
+    bilal: idByKey.bilal,
+    lahore: idByKey.lahore,
   };
 
+  // [brand, model, storage, color, condition, price, city, area, sellerId, verified, score, batteryHealth, listingType]
   const listingSeeds = [
-    ["Apple", "iPhone 15 Pro", "256GB", "Natural Titanium", "Excellent", 150000, "Islamabad", "Blue Area", sellerIds.ahmed, true, 9.1, 91],
-    ["Apple", "iPhone 14", "128GB", "Midnight", "Good", 105000, "Lahore", "Gulberg", sellerIds.sana, true, 8.4, 86],
-    ["Samsung", "Galaxy S24", "256GB", "Onyx Black", "Excellent", 128000, "Karachi", "Saddar", sellerIds.karachi, true, 9.4, 96],
-    ["Samsung", "Galaxy S23", "256GB", "Cream", "Good", 92000, "Rawalpindi", "Satellite Town", sellerIds.bilal, false, null, 84],
-    ["Google", "Pixel 9", "128GB", "Obsidian", "Excellent", 118000, "Islamabad", "Blue Area", sellerIds.ahmed, true, 8.9, 93],
-    ["OnePlus", "OnePlus 13", "256GB", "Midnight Ocean", "Excellent", 135000, "Lahore", "DHA", sellerIds.lahore, true, 9.0, 97],
+    ["Apple", "iPhone 15 Pro", "256GB", "Natural Titanium", "Excellent", 150000, "Islamabad", "Blue Area", sellerIds.ahmed, true, 9.1, 91, "used"],
+    ["Apple", "iPhone 14", "128GB", "Midnight", "Good", 105000, "Lahore", "Gulberg", sellerIds.sana, true, 8.4, 86, "used"],
+    ["Samsung", "Galaxy S24", "256GB", "Onyx Black", "Excellent", 128000, "Karachi", "Saddar", sellerIds.karachi, true, 9.4, 96, "used"],
+    ["Samsung", "Galaxy S23", "256GB", "Cream", "Good", 92000, "Rawalpindi", "Satellite Town", sellerIds.bilal, false, null, 84, "used"],
+    ["Google", "Pixel 9", "128GB", "Obsidian", "Excellent", 118000, "Islamabad", "Blue Area", sellerIds.ahmed, true, 8.9, 93, "used"],
+    ["OnePlus", "OnePlus 13", "256GB", "Midnight Ocean", "Excellent", 135000, "Lahore", "DHA", sellerIds.lahore, true, 9.0, 97, "used"],
+    // Brand-new stock from the "New Phones Only" shop (Karachi Mobile Hub).
+    ["Samsung", "Galaxy S24 Ultra", "512GB", "Titanium Black", "New", 245000, "Karachi", "Saddar", sellerIds.karachi, false, null, 100, "new"],
+    ["Apple", "iPhone 16", "256GB", "Black Titanium", "New", 285000, "Karachi", "Saddar", sellerIds.karachi, false, null, 100, "new"],
   ] as const;
 
   const listingIds = listingSeeds.map(() => generateId("lst_"));
@@ -91,7 +130,7 @@ export async function seedIfEmpty() {
       color: l[3],
       condition: l[4],
       price: l[5],
-      negotiable: true,
+      negotiable: l[12] === "used",
       city: l[6],
       area: l[7],
       seller_id: l[8],
@@ -101,6 +140,7 @@ export async function seedIfEmpty() {
       image_urls: [],
       verified: l[9],
       score: l[10],
+      listing_type: l[12],
       views: Math.floor(200 + Math.random() * 700),
     })),
   );

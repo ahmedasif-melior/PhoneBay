@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { verificationJobs } from "@/data/verification";
 import { formatPKR } from "@/lib/utils";
 import { getCurrentUser } from "@/server/http";
-import { getDb } from "@/server/db";
+import { getAdminDb } from "@/server/db";
 import { verificationRepo } from "@/server/repositories/verification";
 
 export const metadata: Metadata = {
@@ -47,10 +47,10 @@ export default async function ShopDashboardPage() {
   const pendingVerificationJobs = await verificationRepo.listPending();
   const pendingTests = pendingVerificationJobs.length;
   const jobs = pendingVerificationJobs.slice(0, 4);
-  const db = getDb();
+  const db = getAdminDb();
   const [revenueResult, jobsResult] = await Promise.all([
-    db.from("orders").select("price, listings!inner(seller_id)").eq("listings.seller_id", user.id),
-    db.from("verification_requests").select("id, listings!inner(seller_id)", { count: "exact", head: true }).eq("listings.seller_id", user.id),
+    db.from("orders").select("price").eq("seller_id", user.id),
+    db.from("verification_requests").select("id", { count: "exact", head: true }),
   ]);
   const revenue = (revenueResult.data ?? []).reduce((sum, row) => sum + Number(row.price ?? 0), 0);
   const totalJobs = jobsResult.count ?? 0;

@@ -17,11 +17,14 @@ export default async function MyListingsPage() {
     return null;
   }
 
-  const listings = await listingsRepo.list({
-    sellerId: user.id,
-    status: undefined,
-    sort: "newest",
-  });
+  const listings = await listingsRepo.list(
+    {
+      sellerId: user.id,
+      status: undefined,
+      sort: "newest",
+    },
+    true,
+  );
 
   return (
     <div>
