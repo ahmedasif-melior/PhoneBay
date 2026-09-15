@@ -31,7 +31,7 @@ Regular marketplace users who can buy and sell individual devices.
 
 #### Access URL:
 - Dashboard: `/dashboard`
-- Auth: `/auth/user/sign-up`, `/auth/user/sign-in`
+- Auth: `/user/sign-up`, `/user/sign-in`
 
 ---
 
@@ -60,7 +60,7 @@ Business accounts that operate as mobile phone shops with verification and certi
 
 #### Access URL:
 - Dashboard: `/dashboard/shop`
-- Auth: `/auth/shop/sign-up`, `/auth/shop/sign-in`
+- Auth: `/shop/sign-up`, `/shop/sign-in`
 
 #### Shop Verification Flow:
 1. User signs up with `accountPurpose: "shop"`
@@ -98,7 +98,7 @@ System administrators with full platform access and control.
 
 #### Access URL:
 - Dashboard: `/dashboard/admin`
-- Auth: `/auth/admin/sign-in` only (no sign-up)
+- Auth: `/admin/sign-in` only (no sign-up)
 
 #### Admin Creation Flow:
 1. Only an existing ADMIN can create new admins
@@ -174,8 +174,8 @@ CREATE TABLE admin_audit_logs (
 Enforces role-based route protection:
 
 - **USER routes**: Can only access `/dashboard/*` (not admin or shop)
-- **SHOP routes**: Can only access `/dashboard/shop/*` and `/auth/shop/*`
-- **ADMIN routes**: Can access `/dashboard/admin/*` and `/auth/admin/*`
+- **SHOP routes**: Can only access `/dashboard/shop/*` and `/shop/*`
+- **ADMIN routes**: Can access `/dashboard/admin/*` and `/admin/*`
 - **Blocked users**: Automatically redirected to home page
 
 ### Backend Middleware

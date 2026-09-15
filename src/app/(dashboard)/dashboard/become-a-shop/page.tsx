@@ -9,7 +9,7 @@ export default async function BecomeAShopPage() {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect("/auth/user/sign-in");
+    redirect("/user/sign-in");
   }
 
   if (user.role === "SHOP") {

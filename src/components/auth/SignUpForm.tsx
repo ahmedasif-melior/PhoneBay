@@ -13,7 +13,7 @@ export type SignUpAudience = "user" | "shop";
 interface SignUpFormProps {
   /** Which account type this form creates. Drives copy, submit endpoint, and redirects. */
   audience?: SignUpAudience;
-  /** Override the sign-in link. Defaults to `/auth/{audience}/sign-in`. */
+  /** Override the sign-in link. Defaults to `/{audience}/sign-in`. */
   signInPath?: string;
   /** Override the post-signup redirect when email verification isn't required. Defaults per audience. */
   successPath?: string;
@@ -53,7 +53,7 @@ export function SignUpForm({ audience = "user", signInPath, successPath }: SignU
   const [errors, setErrors] = React.useState<Record<string, string>>({});
 
   const copy = AUDIENCE_COPY[audience];
-  const resolvedSignInPath = signInPath ?? `/auth/${audience}/sign-in`;
+  const resolvedSignInPath = signInPath ?? `/${audience}/sign-in`;
   const resolvedSuccessPath = successPath ?? DEFAULT_SUCCESS_PATH[audience];
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -103,7 +103,7 @@ export function SignUpForm({ audience = "user", signInPath, successPath }: SignU
       return;
     }
     if (result.requiresEmailVerification) {
-      router.push(`/auth/${audience}/verify-email?email=${encodeURIComponent(email)}`);
+      router.push(`/${audience}/verify-email?email=${encodeURIComponent(email)}`);
     } else {
       router.push(resolvedSuccessPath);
     }
