@@ -265,6 +265,14 @@ CREATE TABLE IF NOT EXISTS public.listings (
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Safety net for already-deployed databases: CREATE TABLE IF NOT EXISTS
+-- above is a no-op once the table exists, so listing_type needs its own
+-- ADD COLUMN IF NOT EXISTS here, BEFORE the constraint below, or adding
+-- the constraint fails with "column listing_type does not exist" on any
+-- database where public.listings was created before this column existed.
+ALTER TABLE public.listings
+  ADD COLUMN IF NOT EXISTS listing_type TEXT NOT NULL DEFAULT 'used';
+
 DO $$
 BEGIN
   ALTER TABLE public.listings
@@ -493,12 +501,6 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 
 ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS notification_preferences JSONB NOT NULL DEFAULT '{"listings": true, "messages": true, "marketing": false, "verification": true}'::jsonb;
-
--- Safety net for already-deployed databases: CREATE TABLE IF NOT EXISTS
--- above is a no-op once the table exists, so listing_type needs its own
--- ADD COLUMN IF NOT EXISTS to reach existing installs.
-ALTER TABLE public.listings
-  ADD COLUMN IF NOT EXISTS listing_type TEXT NOT NULL DEFAULT 'used';
 
 CREATE UNIQUE INDEX IF NOT EXISTS reviews_listing_reviewer_unique
 ON public.reviews (listing_id, reviewer_id);
