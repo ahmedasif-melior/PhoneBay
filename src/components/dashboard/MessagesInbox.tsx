@@ -820,7 +820,7 @@ function MessagesInboxContent() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="border border-border rounded-[var(--pb-radius-lg)] overflow-hidden h-[calc(100vh-220px)] min-h-[500px] grid lg:grid-cols-[340px_1fr] bg-surface shadow-xs">
+    <div className="border border-border rounded-(--pb-radius-lg) overflow-hidden h-[calc(100vh-220px)] min-h-125 grid lg:grid-cols-[340px_1fr] bg-surface shadow-xs">
       {/* ── Conversation Sidebar ── */}
       <div
         className={cn(
@@ -837,7 +837,7 @@ function MessagesInboxContent() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search chats..."
-              className="w-full bg-bg rounded-[var(--pb-radius-md)] pl-9 pr-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-brand border border-border"
+              className="w-full bg-bg rounded-(--pb-radius-md) pl-9 pr-3 py-1.5 text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-brand border border-border"
             />
           </div>
         </div>
@@ -922,7 +922,7 @@ function MessagesInboxContent() {
                   </div>
 
                   {conversation.unreadCount > 0 && (
-                    <span className="h-5 min-w-[20px] px-1.5 rounded-full bg-brand text-white text-[11px] font-bold flex items-center justify-center shrink-0 self-center shadow-xs">
+                    <span className="h-5 min-w-5 px-1.5 rounded-full bg-brand text-white text-[11px] font-bold flex items-center justify-center shrink-0 self-center shadow-xs">
                       {conversation.unreadCount}
                     </span>
                   )}
@@ -997,7 +997,7 @@ function MessagesInboxContent() {
             {active.listing && (
               <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2.5 bg-brand-tint/40 border-b border-border text-xs">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-[var(--pb-radius-sm)] border border-border bg-surface">
+                  <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-(--pb-radius-sm) border border-border bg-surface">
                     <Image
                       src={active.listing.imageUrl || "/images/phones/iphone-15.webp"}
                       alt={active.listing.title}
@@ -1075,7 +1075,7 @@ function MessagesInboxContent() {
                       >
                         <div
                           className={cn(
-                            "rounded-[var(--pb-radius-lg)] px-4 py-2.5 text-sm shadow-xs break-words relative",
+                            "rounded-(--pb-radius-lg) px-4 py-2.5 text-sm shadow-xs wrap-break-word relative",
                             isMine
                               ? "bg-brand text-white rounded-br-xs"
                               : "bg-surface text-ink border border-border rounded-bl-xs",
@@ -1185,7 +1185,7 @@ export function MessagesInbox() {
   return (
     <React.Suspense
       fallback={
-        <div className="border border-border rounded-[var(--pb-radius-lg)] p-8 text-center text-sm text-ink-faint animate-pulse">
+        <div className="border border-border rounded-(--pb-radius-lg) p-8 text-center text-sm text-ink-faint animate-pulse">
           Loading messages…
         </div>
       }
