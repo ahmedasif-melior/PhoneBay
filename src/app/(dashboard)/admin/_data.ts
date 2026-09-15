@@ -28,7 +28,7 @@ export type AdminData = {
   };
   pipeline: AdminPipeline;
   recentListings: Array<{ id: string; model: string; brand: string; status: string; price: number; seller: string }>;
-  usersWithListings: Array<{ id: string; full_name: string; email: string; role: string; trust_score: number; listing_count: number; sold_count: number }>;
+  usersWithListings: Array<{ id: string; full_name: string; email: string; role: string; trust_score: number; listing_count: number; sold_count: number; isBlocked: boolean }>;
   conversations: Array<{ id: string; buyer_name: string; seller_name: string; listing_name: string; last_text: string; created_at: string }>;
   recentOrders: Array<{ id: string; status: string; price: number; created_at: string; listing_name: string; buyer_name: string; seller_name: string }>;
   recentShops: Array<{ id: string; shop_name: string; shop_type: string; owner_name: string; verified: number; services: string; email: string; city: string }>;
@@ -49,7 +49,7 @@ export async function getAdminData(): Promise<AdminData> {
       conversationsResult,
       messagesResult,
     ] = await Promise.all([
-      db.from("users").select("id, full_name, email, role, trust_score, email_verified, phone_verified, is_blocked, created_at").order("created_at", { ascending: false }),
+      db.from("users").select("id, full_name, email, role, trust_score, is_blocked, email_verified, phone_verified, is_blocked, created_at").order("created_at", { ascending: false }),
       db.from("shops").select("id, owner_id, name, shop_email, city, shop_type, verification_status, services, is_active, created_at").order("created_at", { ascending: false }),
       db.from("listings").select("id, seller_id, brand, model, status, price, created_at").order("created_at", { ascending: false }),
       db.from("orders").select("id, listing_id, buyer_id, seller_id, price, status, created_at").order("created_at", { ascending: false }),
@@ -99,7 +99,7 @@ export async function getAdminData(): Promise<AdminData> {
     const totalSellers = new Set(listings.map((l) => l.seller_id).filter(Boolean)).size;
     const activeListingsCount = listings.filter((l) => l.status === "active").length;
     const soldListingsCount = listings.filter((l) => l.status === "sold").length;
-    const pendingVerificationsCount = verifications.filter((v) => v.status !== "completed").length;
+    const pendingVerificationsCount = verifications.filter((v) => v.status === "pending").length;
     const revenueSum = orders.reduce((sum, o) => sum + Number(o.price || 0), 0);
 
     const stats = {
@@ -153,8 +153,8 @@ export async function getAdminData(): Promise<AdminData> {
       ],
       verification: [
         { label: "Pending", value: verifications.filter((v) => v.status === "pending").length },
-        { label: "In progress", value: verifications.filter((v) => v.status === "in_progress").length },
-        { label: "Completed", value: verifications.filter((v) => v.status === "completed").length },
+        { label: "Approved", value: verifications.filter((v) => v.status === "approved" || v.status === "completed").length },
+        { label: "Rejected", value: verifications.filter((v) => v.status === "rejected").length },
         { label: "Awaiting score", value: verifications.filter((v) => v.score == null).length },
         { label: "Queue", value: pendingVerificationsCount },
       ],
@@ -186,6 +186,7 @@ export async function getAdminData(): Promise<AdminData> {
         trust_score: Number(u.trust_score ?? 0),
         listing_count: counts.total,
         sold_count: counts.sold,
+        isBlocked: !!u.is_blocked,
       };
     });
 

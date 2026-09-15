@@ -10,10 +10,16 @@ import { DashboardMobileNav } from "@/components/dashboard/DashboardMobileNav";
 // each was reachable directly even by a signed-out visitor. This adds the
 // guard once instead of repeating it per page (see (dashboard)/dashboard/layout.tsx
 // for the equivalent pattern on the user side).
+import { shopsRepo } from "@/server/repositories/shops";
+
 export default async function ShopLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/shop/sign-in");
-  if (user.role !== "SHOP") redirect("/dashboard");
+
+  const shop = await shopsRepo.findByOwnerId(user.id);
+  if (user.role !== "SHOP" && !shop) {
+    redirect("/dashboard/become-a-shop");
+  }
 
   return (
    <div className="min-h-screen flex">

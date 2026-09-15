@@ -66,7 +66,10 @@ export async function getCurrentUser(): Promise<UserRecord | null> {
     }
 
     return user;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === "DYNAMIC_SERVER_USAGE" || error?.message?.includes("Dynamic server usage")) {
+      throw error;
+    }
     console.error("[AUTH] getCurrentUser failed:", error);
     return null;
   }

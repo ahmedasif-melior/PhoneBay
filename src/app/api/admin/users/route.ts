@@ -84,3 +84,41 @@ export async function POST(req: Request) {
     throw err;
   }
 }
+
+export async function PATCH(req: Request) {
+  try {
+    const { user: adminUser } = await requireAdmin();
+    const body = await req.json().catch(() => null);
+
+    if (!body?.userId) {
+      return jsonError("Missing userId", 400);
+    }
+
+    const targetUser = await usersRepo.findById(body.userId);
+    if (!targetUser) {
+      return jsonError("User not found", 404);
+    }
+
+    const updated = await usersRepo.update(body.userId, {
+      role: body.role,
+      trustScore: body.trustScore !== undefined ? Number(body.trustScore) : undefined,
+      emailVerified: body.emailVerified !== undefined ? Boolean(body.emailVerified) : undefined,
+      phoneVerified: body.phoneVerified !== undefined ? Boolean(body.phoneVerified) : undefined,
+      fullName: body.fullName,
+      city: body.city,
+    });
+
+    auditLogsRepo.log({
+      adminId: adminUser.id,
+      action: "UPDATE_USER_ROLE_PROFILE",
+      entityType: "USER",
+      entityId: body.userId,
+      changes: body,
+    });
+
+    return jsonOk({ success: true, user: updated ? toPublicUser(updated) : null });
+  } catch (err) {
+    if (isAuthError(err)) return jsonError(err.message, 401);
+    throw err;
+  }
+}

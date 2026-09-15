@@ -18,7 +18,7 @@ export async function POST(
     }
 
     const existing = await verificationRepo.listByListing(id);
-    if (existing.some((v) => v.status !== "completed")) {
+    if (existing.some((v) => v.status === "pending")) {
       return jsonError("A verification request is already in progress for this listing.", 409);
     }
 

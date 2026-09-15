@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
-export function VerifyEmailScreen({ email = "you@example.com", signUpPath = "/user/sign-up" }: { email?: string; signUpPath?: string }) {
+export function VerifyEmailScreen({ email, signUpPath = "/user/sign-up" }: { email?: string; signUpPath?: string }) {
   const router = useRouter();
   const [resent, setResent] = React.useState(false);
   const [cooldown, setCooldown] = React.useState(0);
@@ -29,12 +29,13 @@ export function VerifyEmailScreen({ email = "you@example.com", signUpPath = "/us
       </div>
       <h1 className="text-2xl font-semibold text-ink">Check your inbox</h1>
       <p className="text-sm text-ink-soft mt-2 leading-relaxed">
-        We sent a verification link to <span className="font-medium text-ink">{email}</span>.
+        We sent a verification link to{" "}
+        <span className="font-medium text-ink">{email || "your email address"}</span>.
         Click the link to activate your account.
       </p>
 
       {resent && (
-        <p className="text-sm text-verify-dark bg-verify-tint rounded-[var(--pb-radius-sm)] px-3.5 py-2.5 mt-5">
+        <p className="text-sm text-verify-dark bg-verify-tint rounded-(--pb-radius-sm) px-3.5 py-2.5 mt-5">
           Verification email resent.
         </p>
       )}

@@ -12,6 +12,9 @@ import { getCurrentUser } from "@/server/http";
 import { getAdminDb } from "@/server/db";
 import { verificationRepo } from "@/server/repositories/verification";
 
+import { shopsRepo } from "@/server/repositories/shops";
+import { ShopPendingNotice } from "@/components/shop/ShopPendingNotice";
+
 export const metadata: Metadata = {
   title: "Shop Dashboard",
   description: "Track verification jobs, customer flow, and store performance.",
@@ -23,7 +26,7 @@ export default async function ShopDashboardPage() {
   if (!user) {
     return (
       <Section className="pt-10 sm:pt-14">
-        <Card className="p-8 text-center">
+        <Card className="p-8 text-center max-w-xl mx-auto">
           <h1 className="text-2xl font-semibold text-ink">Shop dashboard</h1>
           <p className="mt-2 text-ink-soft">Sign in with a shop account to manage verification work and your active inventory.</p>
           <Button href="/shop/sign-in" className="mt-5">Sign In</Button>
@@ -32,14 +35,28 @@ export default async function ShopDashboardPage() {
     );
   }
 
-  if (user.role !== "SHOP") {
+  const shop = await shopsRepo.findByOwnerId(user.id);
+
+  if (!shop) {
     return (
       <Section className="pt-10 sm:pt-14">
-        <Card className="p-8 text-center">
-          <h1 className="text-2xl font-semibold text-ink">Access required</h1>
-          <p className="mt-2 text-ink-soft">This dashboard is for verified shop accounts.</p>
-          <Button href="/dashboard" className="mt-5">Back to dashboard</Button>
+        <Card className="p-8 text-center max-w-xl mx-auto">
+          <h1 className="text-2xl font-semibold text-ink">Set Up Your Shop</h1>
+          <p className="mt-2 text-ink-soft">You need to register your shop before accessing store tools.</p>
+          <Button href="/dashboard/become-a-shop" className="mt-5">Register Shop Profile</Button>
         </Card>
+      </Section>
+    );
+  }
+
+  if (shop.verificationStatus !== "approved") {
+    return (
+      <Section className="pt-10 sm:pt-14">
+        <div className="mb-8">
+          <p className="text-sm font-medium uppercase tracking-[0.12em] text-brand">Partner onboarding</p>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">Shop Verification Status</h1>
+        </div>
+        <ShopPendingNotice shop={shop} />
       </Section>
     );
   }

@@ -31,7 +31,10 @@ export async function getSession(): Promise<SessionPayload | null> {
       userId: user.id,
       email: user.email || "",
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === "DYNAMIC_SERVER_USAGE" || error?.message?.includes("Dynamic server usage")) {
+      throw error;
+    }
     console.error("[AUTH] getSession failed:", error);
     return null;
   }

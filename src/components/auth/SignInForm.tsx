@@ -83,7 +83,14 @@ export function SignInForm({ audience = "user", forgotPasswordPath, signUpPath, 
       setError(result.error ?? "Unable to sign in. Please try again.");
       return;
     }
-    router.push(resolvedSuccessPath);
+    const actualRole: string | undefined = result.user?.role;
+    const roleRedirect: Record<string, string> = {
+      ADMIN: "/admin",
+      SHOP: "/shop/dashboard",
+      USER: "/dashboard",
+      SELLER: "/dashboard",
+    };
+    router.push((actualRole && roleRedirect[actualRole]) ?? resolvedSuccessPath);
   };
 
   return (

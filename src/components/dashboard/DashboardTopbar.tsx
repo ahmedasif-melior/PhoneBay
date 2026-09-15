@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Bell } from "lucide-react";
 import { Logo } from "@/components/navigation/Logo";
 import { Avatar } from "@/components/ui/Avatar";
 import { Dropdown, DropdownItem } from "@/components/ui/Dropdown";
 import { User, Settings, LogOut } from "lucide-react";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 export function DashboardTopbar({ userName = "Ahmed Bin Asif" }: { userName?: string }) {
   return (
@@ -16,13 +16,7 @@ export function DashboardTopbar({ userName = "Ahmed Bin Asif" }: { userName?: st
           Welcome back, <span className="text-ink font-medium">{userName.split(" ")[0]}</span>
         </span>
         <div className="flex items-center gap-3 ml-auto">
-          <button
-            aria-label="Notifications"
-            className="relative h-10 w-10 rounded-full flex items-center justify-center hover:bg-black/4"
-          >
-            <Bell className="h-5 w-5 text-ink-soft" />
-            <span className="absolute top-2 right-2.5 h-2 w-2 rounded-full bg-danger" />
-          </button>
+          <NotificationBell />
           <Dropdown
             align="right"
             trigger={<Avatar name={userName} size="sm" className="cursor-pointer" />}

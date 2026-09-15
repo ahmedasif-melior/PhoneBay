@@ -117,6 +117,20 @@ export async function POST(req: NextRequest) {
     }
 
     /*
+     * A shop account signing in through the plain user form would
+     * otherwise succeed and get redirected to the regular user
+     * dashboard by the client, mixing up shop and user accounts.
+     * Send them to the shop sign-in flow instead.
+     */
+    if (expectedRole === "USER" && user.role === "SHOP") {
+      await supabase.auth.signOut();
+      return jsonError(
+        "This email belongs to a shop account. Please use shop sign in.",
+        403,
+      );
+    }
+
+    /*
      * Return the authenticated application user.
      *
      * The actual Supabase Auth session is stored in the

@@ -133,15 +133,20 @@ export const verificationRepo = {
   },
 
   async listPending() {
-    return (
-      await queryRows<V>(
-        getAdminDb()
-          .from("verification_requests")
-          .select("*")
-          .neq("status", "completed")
-          .order("requested_at"),
-      )
-    ).map(mv);
+    try {
+      return (
+        await queryRows<V>(
+          getAdminDb()
+            .from("verification_requests")
+            .select("*")
+            .eq("status", "pending")
+            .order("requested_at"),
+        )
+      ).map(mv);
+    } catch (err) {
+      console.error("[VERIFICATION] listPending failed:", err);
+      return [];
+    }
   },
 
   /**
@@ -181,7 +186,7 @@ export const verificationRepo = {
       getAdminDb()
         .from("verification_requests")
         .update({
-          status: "completed",
+          status: "approved",
           completed_at:
             new Date().toISOString(),
           score: i.score,

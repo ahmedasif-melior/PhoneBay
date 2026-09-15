@@ -18,7 +18,7 @@ export async function GET() {
       db.from("listings").select("id", { count: "exact", head: true }),
       db.from("listings").select("id", { count: "exact", head: true }).eq("status", "active"),
       db.from("orders").select("id", { count: "exact", head: true }),
-      db.from("verification_requests").select("id", { count: "exact", head: true }).neq("status", "completed"),
+      db.from("verification_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
       db.from("orders").select("price"),
       listingsRepo.list({ sort: "newest" }),
     ]);

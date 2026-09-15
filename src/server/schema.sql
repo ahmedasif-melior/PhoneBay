@@ -21,6 +21,7 @@ BEGIN
   CREATE TYPE role_enum AS ENUM ('ADMIN', 'SELLER', 'SHOP', 'USER');
 EXCEPTION
   WHEN duplicate_object THEN NULL;
+  WHEN duplicate_table THEN NULL;
 END
 $$;
 
@@ -29,6 +30,7 @@ BEGIN
   CREATE TYPE account_purpose_enum AS ENUM ('buyer', 'seller', 'both', 'shop');
 EXCEPTION
   WHEN duplicate_object THEN NULL;
+  WHEN duplicate_table THEN NULL;
 END
 $$;
 
@@ -43,6 +45,7 @@ BEGIN
   );
 EXCEPTION
   WHEN duplicate_object THEN NULL;
+  WHEN duplicate_table THEN NULL;
 END
 $$;
 
@@ -56,6 +59,7 @@ BEGIN
   );
 EXCEPTION
   WHEN duplicate_object THEN NULL;
+  WHEN duplicate_table THEN NULL;
 END
 $$;
 
@@ -72,6 +76,7 @@ BEGIN
   );
 EXCEPTION
   WHEN duplicate_object THEN NULL;
+  WHEN duplicate_table THEN NULL;
 END
 $$;
 
@@ -108,9 +113,30 @@ CREATE TABLE IF NOT EXISTS public.users (
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Safety net for already-deployed databases: CREATE TABLE IF NOT EXISTS
+-- above is a no-op once public.users exists, so any column added to this
+-- table over time (account_purpose, shop_id, trust_score, etc.) needs its
+-- own ADD COLUMN IF NOT EXISTS here or it silently never reaches installs
+-- that predate it -- exactly what happened with account_purpose, which the
+-- handle_new_user() trigger below depends on.
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+  ADD COLUMN IF NOT EXISTS bio TEXT,
+  ADD COLUMN IF NOT EXISTS city TEXT,
+  ADD COLUMN IF NOT EXISTS role role_enum NOT NULL DEFAULT 'USER',
+  ADD COLUMN IF NOT EXISTS account_purpose account_purpose_enum,
+  ADD COLUMN IF NOT EXISTS shop_id UUID,
+  ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS trust_score NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS notification_preferences JSONB NOT NULL DEFAULT '{"listings": true, "messages": true, "marketing": false, "verification": true}'::jsonb,
+  ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS blocked_reason TEXT,
+  ADD COLUMN IF NOT EXISTS blocked_at TIMESTAMP WITH TIME ZONE;
 
--- ============================================================================
--- SECTION 4: SHOPS
+
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.shops (
@@ -164,28 +190,27 @@ ALTER TABLE public.shops
   ADD COLUMN IF NOT EXISTS verified_by_admin_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS shop_type TEXT NOT NULL DEFAULT 'general';
 
-DO $$
-BEGIN
-  ALTER TABLE public.shops
-    ADD CONSTRAINT shops_shop_type_check
-    CHECK (shop_type IN ('general', 'new_phones'));
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END
-$$;
+-- Drop-then-add instead of catching exceptions: a UNIQUE/CHECK constraint
+-- can leave behind a same-named index or pg_constraint row from an earlier
+-- partial run, and depending on which piece is left over Postgres can raise
+-- either 42710 (duplicate_object) or 42P07 (duplicate_table). Explicitly
+-- dropping both possible leftovers first makes this safe to re-run no
+-- matter which one is stale.
+ALTER TABLE public.shops DROP CONSTRAINT IF EXISTS shops_shop_type_check;
+
+ALTER TABLE public.shops
+  ADD CONSTRAINT shops_shop_type_check
+  CHECK (shop_type IN ('general', 'new_phones'));
 
 -- One shop per owner account. The "convert my account to a shop" flow
 -- and the shop signup flow both rely on there being at most one shop
 -- row per owner_id.
-DO $$
-BEGIN
-  ALTER TABLE public.shops
-    ADD CONSTRAINT shops_owner_id_unique
-    UNIQUE (owner_id);
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END
-$$;
+ALTER TABLE public.shops DROP CONSTRAINT IF EXISTS shops_owner_id_unique;
+DROP INDEX IF EXISTS public.shops_owner_id_unique;
+
+ALTER TABLE public.shops
+  ADD CONSTRAINT shops_owner_id_unique
+  UNIQUE (owner_id);
 
 -- City is required by the original table definition, but neither the
 -- shop signup form nor the convert-to-shop flow currently collect it
@@ -203,17 +228,13 @@ CREATE INDEX IF NOT EXISTS shops_shop_type_idx ON public.shops (shop_type);
 -- Must be added after shops exists because shops also references users.
 -- ============================================================================
 
-DO $$
-BEGIN
-  ALTER TABLE public.users
-    ADD CONSTRAINT fk_users_shop_id
-    FOREIGN KEY (shop_id)
-    REFERENCES public.shops(id)
-    ON DELETE SET NULL;
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END
-$$;
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS fk_users_shop_id;
+
+ALTER TABLE public.users
+  ADD CONSTRAINT fk_users_shop_id
+  FOREIGN KEY (shop_id)
+  REFERENCES public.shops(id)
+  ON DELETE SET NULL;
 
 
 -- ============================================================================
@@ -273,15 +294,11 @@ CREATE TABLE IF NOT EXISTS public.listings (
 ALTER TABLE public.listings
   ADD COLUMN IF NOT EXISTS listing_type TEXT NOT NULL DEFAULT 'used';
 
-DO $$
-BEGIN
-  ALTER TABLE public.listings
-    ADD CONSTRAINT listings_listing_type_check
-    CHECK (listing_type IN ('used', 'new'));
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END
-$$;
+ALTER TABLE public.listings DROP CONSTRAINT IF EXISTS listings_listing_type_check;
+
+ALTER TABLE public.listings
+  ADD CONSTRAINT listings_listing_type_check
+  CHECK (listing_type IN ('used', 'new'));
 
 CREATE INDEX IF NOT EXISTS listings_listing_type_idx ON public.listings (listing_type);
 
@@ -474,6 +491,17 @@ CREATE TABLE IF NOT EXISTS public.verification_requests (
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Safety net for already-deployed databases, same reasoning as the users/
+-- shops/listings safety nets above: CREATE TABLE IF NOT EXISTS is a no-op
+-- once this table exists, so any column added after the table's original
+-- creation needs its own ADD COLUMN IF NOT EXISTS to reach older installs.
+ALTER TABLE public.verification_requests
+  ADD COLUMN IF NOT EXISTS status verification_status NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS score NUMERIC,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
 -- ============================================================================
 -- SECTION 14: AUDIT LOGS
 -- ============================================================================
@@ -498,9 +526,6 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 -- ============================================================================
 -- SECTION 15: EXISTING DATABASE UPDATES
 -- ============================================================================
-
-ALTER TABLE public.users
-  ADD COLUMN IF NOT EXISTS notification_preferences JSONB NOT NULL DEFAULT '{"listings": true, "messages": true, "marketing": false, "verification": true}'::jsonb;
 
 CREATE UNIQUE INDEX IF NOT EXISTS reviews_listing_reviewer_unique
 ON public.reviews (listing_id, reviewer_id);
@@ -974,7 +999,7 @@ BEGIN
     ),
     NEW.raw_user_meta_data->>'phone',
     'USER',
-    NEW.raw_user_meta_data->>'account_purpose',
+    NULLIF(NEW.raw_user_meta_data->>'account_purpose', '')::account_purpose_enum,
     NEW.email_confirmed_at IS NOT NULL
   )
 
@@ -1025,6 +1050,35 @@ BEGIN
   END IF;
 END
 $$;
+
+
+-- ============================================================================
+-- SECTION 20b: NOTIFICATIONS TABLE
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'general',
+  link TEXT,
+  read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS notifications_user_id_read_idx ON public.notifications (user_id, read);
+CREATE INDEX IF NOT EXISTS notifications_created_at_idx ON public.notifications (created_at DESC);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read their own notifications"
+ON public.notifications FOR SELECT
+USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own notifications"
+ON public.notifications FOR UPDATE
+USING (auth.uid() = user_id);
 
 
 -- ============================================================================

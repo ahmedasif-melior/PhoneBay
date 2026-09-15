@@ -21,12 +21,15 @@ export async function GET() {
     return jsonOk({
       shops: shops.map((shop) => ({
         id: shop.id,
+        ownerId: shop.ownerId,
         shopName: shop.shopName,
         shopEmail: shop.shopEmail,
         city: shop.city,
         shopType: shop.shopType,
         verified: shop.verified,
         verificationStatus: shop.verificationStatus,
+        verificationNotes: shop.verificationNotes,
+        verifiedAt: shop.verifiedAt,
         services: shop.services,
         isActive: shop.isActive,
         createdAt: shop.createdAt,
@@ -87,6 +90,44 @@ export async function POST(req: NextRequest) {
         isActive: updatedShop!.isActive,
       },
     });
+  } catch (err) {
+    if (isAuthError(err)) return jsonError(err.message, 401);
+    throw err;
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { user: adminUser } = await requireAdmin();
+    const body = await req.json().catch(() => null);
+
+    if (!body?.shopId) {
+      return jsonError("Missing shopId", 400);
+    }
+
+    const shop = await shopsRepo.findById(body.shopId);
+    if (!shop) {
+      return jsonError("Shop not found", 404);
+    }
+
+    const updated = await shopsRepo.update(body.shopId, {
+      shopName: body.shopName,
+      shopEmail: body.shopEmail,
+      city: body.city,
+      shopType: body.shopType,
+      services: body.services,
+      isActive: body.isActive,
+    });
+
+    auditLogsRepo.log({
+      adminId: adminUser.id,
+      action: "UPDATE_SHOP",
+      entityType: "SHOP",
+      entityId: body.shopId,
+      changes: body,
+    });
+
+    return jsonOk({ shop: updated });
   } catch (err) {
     if (isAuthError(err)) return jsonError(err.message, 401);
     throw err;
