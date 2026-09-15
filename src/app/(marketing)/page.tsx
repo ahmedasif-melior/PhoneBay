@@ -57,7 +57,7 @@ export default function HomePage() {
           PROBLEM / VALUE
       ========================================================= */}
       <section className="bg-[#FCFCFD] py-24 sm:py-28">
-        <div className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7567F8]">
               More than a marketplace
@@ -91,7 +91,7 @@ export default function HomePage() {
           aria-hidden="true"
           className="
             pointer-events-none absolute left-[-10%] top-[-20%]
-            h-[420px] w-[420px] rounded-full
+            h-105 w-105 rounded-full
             bg-[#9B3CFF]/[0.07] blur-[130px]
           "
         />
@@ -100,12 +100,12 @@ export default function HomePage() {
           aria-hidden="true"
           className="
             pointer-events-none absolute bottom-[-20%] right-[-10%]
-            h-[420px] w-[420px] rounded-full
+            h-105 w-105 rounded-full
             bg-[#16C7A3]/[0.07] blur-[130px]
           "
         />
 
-        <div className="relative mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid items-center gap-14 lg:grid-cols-2">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#6355DC] shadow-sm">
@@ -167,7 +167,7 @@ export default function HomePage() {
           CERTIFICATE
       ========================================================= */}
       <section className="bg-white py-24 sm:py-28">
-        <div className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid items-center gap-14 lg:grid-cols-2">
             <div className="order-2 lg:order-1">
               <CertificatePreview />
@@ -201,7 +201,7 @@ export default function HomePage() {
                     key={item}
                     className="
                       flex items-center gap-2.5
-                      rounded-xl border border-black/[0.055]
+                      rounded-xl border border-black/5.5
                       bg-[#FCFCFD] px-3.5 py-3
                       text-xs font-medium text-[#514D59]
                     "
@@ -224,7 +224,7 @@ export default function HomePage() {
           aria-hidden="true"
           className="
             pointer-events-none absolute left-[-15%] top-[15%]
-            h-[500px] w-[500px] rounded-full
+            h-125 w-125 rounded-full
             bg-[#553CFF]/10 blur-[150px]
           "
         />
@@ -233,12 +233,12 @@ export default function HomePage() {
           aria-hidden="true"
           className="
             pointer-events-none absolute right-[-15%] bottom-[-10%]
-            h-[500px] w-[500px] rounded-full
+            h-125 w-125 rounded-full
             bg-[#16C7A3]/10 blur-[150px]
           "
         />
 
-        <div className="relative mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid items-center gap-14 lg:grid-cols-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#42E6C2]">
@@ -274,7 +274,7 @@ export default function HomePage() {
                   },
                 ].map((item) => (
                   <div key={item.title} className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-[#9F93FF]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/6 text-[#9F93FF]">
                       <item.icon className="h-4 w-4" />
                     </div>
 
@@ -302,7 +302,7 @@ export default function HomePage() {
           BUYER FLOW
       ========================================================= */}
       <section className="bg-[#FCFCFD] py-24 sm:py-28">
-        <div className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#7567F8]">
               Simple for buyers
@@ -345,13 +345,13 @@ export default function HomePage() {
                 transition={{ duration: 0.2 }}
                 className="
                   relative rounded-3xl
-                  border border-black/[0.055]
+                  border border-black/5.5
                   bg-white p-7
                   shadow-[0_12px_40px_rgba(20,18,30,.04)]
                 "
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#7567F8]/[0.08] text-[#6759E8]">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#7567F8]/8 text-[#6759E8]">
                     <item.icon className="h-5 w-5" />
                   </div>
 
@@ -377,7 +377,7 @@ export default function HomePage() {
           SHOPS
       ========================================================= */}
       <section className="relative overflow-hidden bg-[#F4F2F8] py-24 sm:py-28">
-        <div className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr]">
             <div>
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#16C7A3]/10 text-[#0F9F86]">
@@ -436,10 +436,10 @@ export default function HomePage() {
           SELLER CTA
       ========================================================= */}
       <section className="bg-white py-24 sm:py-28">
-        <div className="mx-auto max-w-[1000px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-250 px-4 sm:px-6 lg:px-8">
           <div
             className="
-              relative overflow-hidden rounded-[32px]
+              relative overflow-hidden rounded-4xl
               bg-[#0D0D12] px-7 py-12 text-center
               shadow-[0_25px_80px_rgba(20,18,30,.12)]
               sm:px-12 sm:py-16
@@ -449,7 +449,7 @@ export default function HomePage() {
               aria-hidden="true"
               className="
                 pointer-events-none absolute left-[-15%] top-[-50%]
-                h-[420px] w-[420px] rounded-full
+                h-105 w-105 rounded-full
                 bg-[#9B3CFF]/15 blur-[130px]
               "
             />
@@ -458,7 +458,7 @@ export default function HomePage() {
               aria-hidden="true"
               className="
                 pointer-events-none absolute right-[-15%] bottom-[-50%]
-                h-[420px] w-[420px] rounded-full
+                h-105 w-105 rounded-full
                 bg-[#16C7A3]/12 blur-[130px]
               "
             />
@@ -483,7 +483,7 @@ export default function HomePage() {
                   className="
                     inline-flex h-12 items-center justify-center gap-2
                     rounded-xl px-5 text-sm font-semibold text-white
-                    bg-gradient-to-r from-[#7567F8] via-[#765BEA] to-[#16C7A3]
+                    bg-linear-to-r from-[#7567F8] via-[#765BEA] to-[#16C7A3]
                     shadow-[0_10px_35px_rgba(108,99,255,.25)]
                     transition hover:-translate-y-0.5
                   "
@@ -496,9 +496,9 @@ export default function HomePage() {
                   href="/marketplace"
                   className="
                     inline-flex h-12 items-center justify-center gap-2
-                    rounded-xl border border-white/10 bg-white/[0.04]
+                    rounded-xl border border-white/10 bg-white/4
                     px-5 text-sm font-semibold text-white/80
-                    transition hover:bg-white/[0.08] hover:text-white
+                    transition hover:bg-white/8 hover:text-white
                   "
                 >
                   Browse Marketplace
@@ -512,8 +512,8 @@ export default function HomePage() {
       {/* =========================================================
           FINAL TRUST STATEMENT
       ========================================================= */}
-      <section className="border-t border-black/[0.055] bg-[#FCFCFD] py-10">
-        <div className="mx-auto flex max-w-[1280px] flex-col items-center justify-between gap-4 px-4 sm:px-6 md:flex-row lg:px-8">
+      <section className="border-t border-black/5.5 bg-[#FCFCFD] py-10">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:px-6 md:flex-row lg:px-8">
           <div className="flex items-center gap-2 text-xs text-[#85818C]">
             <ShieldCheck className="h-4 w-4 text-[#10A98D]" />
             Built around transparency, verification and better transactions.
