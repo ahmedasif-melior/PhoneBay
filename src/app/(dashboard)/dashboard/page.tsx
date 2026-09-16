@@ -248,16 +248,13 @@ export default async function DashboardOverviewPage() {
 
           {recentListing ? (
             <div className="flex items-center gap-4">
-              <div className="h-16 w-16 bg-bg rounded-[--pb-radius-sm] border border-border flex items-center justify-center shrink-0">
+              <div className="h-16 w-16 bg-bg rounded-[--pb-radius-sm] border border-border flex items-center justify-center shrink-0 overflow-hidden">
                 <Image
-                  src={imageForListing(
-                    recentListing.brand,
-                    recentListing.model,
-                  )}
+                  src={recentListing.imageUrls[0]}
                   alt=""
                   width={56}
                   height={56}
-                  className="object-contain h-4/5 w-4/5"
+                  className="object-cover h-full w-full"
                 />
               </div>
 

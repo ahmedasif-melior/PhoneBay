@@ -5,7 +5,6 @@ import { DashboardSidebarNav } from "@/components/dashboard/DashboardSidebarNav"
 import { DashboardMobileNav } from "@/components/dashboard/DashboardMobileNav";
 import { DashboardTopbar } from "@/components/dashboard/DashboardTopbar";
 import { getCurrentUser } from "@/server/http";
-
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/user/sign-in");

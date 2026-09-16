@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
-import { AdminDataTable } from "@/components/dashboard/AdminDataTable";
+import { AdminListingsManager } from "@/components/dashboard/AdminListingsManager";
 import { getAdminData } from "../_data";
 
-export const metadata: Metadata = { title: "Admin Listings" };
+export const metadata: Metadata = {
+  title: "Admin Listings Moderation | PhoneBay",
+  description: "Review, approve, pause, and moderate smartphone listings across the marketplace.",
+};
 
 export default async function AdminListingsPage() {
   const { recentListings } = await getAdminData();
-  return <AdminDataTable title="Listings" description="Recent marketplace listings and moderation status." rows={recentListings} columns={[
-    { label: "Device", value: (listing) => `${listing.brand} ${listing.model}` },
-    { label: "Seller", value: (listing) => listing.seller },
-    { label: "Status", value: (listing) => listing.status },
-    { label: "Price", value: (listing) => `PKR ${listing.price.toLocaleString()}` },
-  ]} />;
+
+  return (
+    <div className="space-y-6">
+      <AdminListingsManager initialListings={recentListings} />
+    </div>
+  );
 }

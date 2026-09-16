@@ -11,6 +11,9 @@ import {
   PauseCircle,
   Trash2,
   PlayCircle,
+  Search,
+  ArrowUpDown,
+  X,
 } from "lucide-react";
 
 import { Tabs } from "@/components/ui/Tabs";
@@ -34,35 +37,35 @@ const tabs = [
   { id: "draft", label: "Drafts" },
 ];
 
-function imageForListing(brand: string, model: string): string {
-  const key = `${brand} ${model}`.toLowerCase();
+// function imageForListing(brand: string, model: string): string {
+//   const key = `${brand} ${model}`.toLowerCase();
 
-  if (key.includes("iphone 15 pro")) {
-    return "/images/phones/iphone-15-pro.svg";
-  }
+//   if (key.includes("iphone 15 pro")) {
+//     return "/images/phones/iphone-15-pro.svg";
+//   }
 
-  if (key.includes("iphone 14")) {
-    return "/images/phones/iphone-14.svg";
-  }
+//   if (key.includes("iphone 14")) {
+//     return "/images/phones/iphone-14.svg";
+//   }
 
-  if (key.includes("s24")) {
-    return "/images/phones/galaxy-s24.svg";
-  }
+//   if (key.includes("s24")) {
+//     return "/images/phones/galaxy-s24.svg";
+//   }
 
-  if (key.includes("s23")) {
-    return "/images/phones/galaxy-s23.svg";
-  }
+//   if (key.includes("s23")) {
+//     return "/images/phones/galaxy-s23.svg";
+//   }
 
-  if (key.includes("pixel")) {
-    return "/images/phones/pixel-9.svg";
-  }
+//   if (key.includes("pixel")) {
+//     return "/images/phones/pixel-9.svg";
+//   }
 
-  if (key.includes("oneplus")) {
-    return "/images/phones/oneplus-13.svg";
-  }
+//   if (key.includes("oneplus")) {
+//     return "/images/phones/oneplus-13.svg";
+//   }
 
-  return "/images/phones/iphone-15.webp";
-}
+//   return "/images/phones/iphone-15.webp";
+// }
 
 export function MyListingsBrowser({
   initialListings,
@@ -80,14 +83,41 @@ export function MyListingsBrowser({
     : [];
 
   const [active, setActive] = React.useState("all");
+  const [search, setSearch] = React.useState("");
+  const [sortBy, setSortBy] = React.useState<"newest" | "views" | "price-desc" | "price-asc">("newest");
 
   const [listings, setListings] =
     React.useState<ListingRecord[]>(safeInitialListings);
 
-  const filtered =
-    active === "all"
-      ? listings
-      : listings.filter((listing) => listing.status === active);
+  const filtered = React.useMemo(() => {
+    return listings
+      .filter((listing) => {
+        if (active !== "all" && listing.status !== active) return false;
+        if (search.trim()) {
+          const q = search.toLowerCase().trim();
+          const match =
+            listing.model.toLowerCase().includes(q) ||
+            listing.brand.toLowerCase().includes(q);
+          if (!match) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === "newest") {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        if (sortBy === "views") {
+          return (b.views ?? 0) - (a.views ?? 0);
+        }
+        if (sortBy === "price-desc") {
+          return b.price - a.price;
+        }
+        if (sortBy === "price-asc") {
+          return a.price - b.price;
+        }
+        return 0;
+      });
+  }, [listings, active, search, sortBy]);
 
   const togglePause = async (id: string) => {
     const listing = listings.find((item) => item.id === id);
@@ -175,6 +205,43 @@ export function MyListingsBrowser({
         onChange={setActive}
       />
 
+      <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-faint pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search your listings..."
+            className="w-full h-9 pl-9 pr-8 rounded-[var(--pb-radius-sm)] border border-border bg-surface text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-brand"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <span className="text-xs text-ink-soft flex items-center gap-1">
+            <ArrowUpDown className="h-3.5 w-3.5" /> Sort:
+          </span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="h-9 px-2.5 rounded-[var(--pb-radius-sm)] border border-border bg-surface text-xs font-medium text-ink focus:outline-none focus:border-brand cursor-pointer"
+          >
+            <option value="newest">Newest First</option>
+            <option value="views">Most Views</option>
+            <option value="price-desc">Price: High to Low</option>
+            <option value="price-asc">Price: Low to High</option>
+          </select>
+        </div>
+      </div>
+
       <div className="mt-6 hidden lg:block border border-border rounded-[var(--pb-radius-md)] overflow-visible">
         <table className="w-full text-sm">
           <thead className="bg-bg text-ink-faint text-xs uppercase tracking-wide">
@@ -209,16 +276,13 @@ export function MyListingsBrowser({
                     href={`/dashboard/listings/${listing.id}`}
                     className="flex items-center gap-3"
                   >
-                    <div className="h-11 w-11 rounded-[var(--pb-radius-sm)] bg-bg border border-border flex items-center justify-center shrink-0">
+                    <div className="h-11 w-11 rounded-(--pb-radius-sm) bg-bg border border-border flex items-center justify-center shrink-0 overflow-hidden">
                       <Image
-                        src={imageForListing(
-                          listing.brand,
-                          listing.model,
-                        )}
-                        alt=""
+                        src={listing.imageUrls?.[0] || "/images/phones/iphone-15.webp"}
+                        alt={listing.model}
                         width={36}
                         height={36}
-                        className="object-contain h-4/5 w-4/5"
+                        className="object-cover h-full w-full"
                       />
                     </div>
 
@@ -266,7 +330,7 @@ export function MyListingsBrowser({
                   <Dropdown
                     align="right"
                     trigger={
-                      <span className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-black/[0.04]">
+                      <span className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-black/4">
                         <MoreVertical className="h-4 w-4 text-ink-soft" />
                       </span>
                     }
@@ -331,19 +395,16 @@ export function MyListingsBrowser({
         {filtered.map((listing) => (
           <div
             key={listing.id}
-            className="border border-border rounded-[var(--pb-radius-md)] p-4"
+            className="border border-border rounded-(--pb-radius-md) p-4"
           >
             <div className="flex items-center gap-3">
-              <div className="h-14 w-14 rounded-[var(--pb-radius-sm)] bg-bg border border-border flex items-center justify-center shrink-0">
+              <div className="h-14 w-14 rounded-(--pb-radius-sm) bg-bg border border-border flex items-center justify-center shrink-0 overflow-hidden">
                 <Image
-                  src={imageForListing(
-                    listing.brand,
-                    listing.model,
-                  )}
+                  src={listing.imageUrls?.[0] || "/images/phones/iphone-15.webp"}
                   alt=""
                   width={44}
                   height={44}
-                  className="object-contain h-4/5 w-4/5"
+                  className="object-cover h-full w-full"
                 />
               </div>
 

@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { getCurrentUser, isAdminRole } from "@/server/http";
+import { AdminReportsManager } from "@/components/dashboard/AdminReportsManager";
+import { getAdminData } from "../_data";
 
-export const metadata: Metadata = { title: "Admin Reports" };
+export const metadata: Metadata = {
+  title: "Admin Reports & Analytics | PhoneBay",
+  description: "Marketplace GMV, take rates, financial audits, and operational KPIs.",
+};
 
 export default async function AdminReportsPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/admin/sign-in");
-  if (!isAdminRole(user.role)) redirect("/dashboard");
+  const { reports } = await getAdminData();
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold text-ink">Reports</h1>
-      <p className="mt-1 text-ink-soft">Marketplace health insights, trends, and operational summaries.</p>
+    <div className="space-y-6">
+      <AdminReportsManager reports={reports} />
     </div>
   );
 }

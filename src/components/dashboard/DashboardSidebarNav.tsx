@@ -48,6 +48,7 @@ const adminItems = [
   { href: "/admin/listings", label: "Listings", icon: List },
   { href: "/admin/orders", label: "Orders", icon: ReceiptText },
   { href: "/admin/verification-requests", label: "Verification", icon: BadgeCheck },
+  { href: "/admin/opportunities", label: "Opportunities", icon: BriefcaseBusiness },
   { href: "/admin/reports", label: "Reports", icon: TrendingUp },
   { href: "/admin/disputes", label: "Disputes", icon: MessageSquare },
   { href: "/admin/settings", label: "Settings", icon: Settings },

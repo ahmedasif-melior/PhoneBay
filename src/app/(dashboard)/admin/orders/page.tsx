@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
-import { AdminDataTable } from "@/components/dashboard/AdminDataTable";
+import { AdminOrdersManager } from "@/components/dashboard/AdminOrdersManager";
 import { getAdminData } from "../_data";
 
-export const metadata: Metadata = { title: "Admin Orders" };
+export const metadata: Metadata = {
+  title: "Admin Orders & Escrow | PhoneBay",
+  description: "Monitor orders, tracking, fulfillment status, and escrow releases.",
+};
 
 export default async function AdminOrdersPage() {
   const { recentOrders } = await getAdminData();
-  return <AdminDataTable title="Orders" description="Buyer-seller order flow and fulfillment checkpoints." rows={recentOrders} columns={[
-    { label: "Listing", value: (order) => order.listing_name },
-    { label: "Buyer", value: (order) => order.buyer_name },
-    { label: "Seller", value: (order) => order.seller_name },
-    { label: "Status", value: (order) => order.status },
-    { label: "Price", value: (order) => `PKR ${order.price.toLocaleString()}` },
-  ]} />;
+
+  return (
+    <div className="space-y-6">
+      <AdminOrdersManager initialOrders={recentOrders} />
+    </div>
+  );
 }

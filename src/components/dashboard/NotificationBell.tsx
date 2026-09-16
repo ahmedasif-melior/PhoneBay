@@ -1,5 +1,4 @@
 "use client";
-
 import * as React from "react";
 import Link from "next/link";
 import {
@@ -12,6 +11,7 @@ import {
   Check,
   CheckCheck,
 } from "lucide-react";
+import "@/app/globals.css";
 
 type Notification = {
   id: string;
@@ -121,18 +121,18 @@ export function NotificationBell() {
         type="button"
         onClick={() => setOpen(!open)}
         aria-label="Notifications"
-        className="relative h-10 w-10 rounded-full flex items-center justify-center hover:bg-black/[0.04] transition"
+        className="relative h-10 w-10 rounded-full flex items-center justify-center hover:bg-black/4 transition"
       >
         <Bell className="h-5 w-5 text-ink-soft" />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 flex items-center justify-center h-4.5 min-w-[18px] rounded-full bg-danger text-white text-[10px] font-bold px-1">
+          <span className="absolute top-1.5 right-1.5 flex items-center justify-center h-4.5 min-w-4.5 rounded-full bg-danger text-white text-[10px] font-bold px-1">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-[360px] max-h-[480px] bg-surface border border-border rounded-[var(--pb-radius-md)] shadow-lg overflow-hidden flex flex-col">
+        <div className="absolute right-0 top-12 z-50 w-90 max-h-120 bg-surface border border-border rounded-(--pb-radius-md) shadow-lg overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-bg shrink-0">
             <h3 className="text-sm font-semibold text-ink">Notifications</h3>

@@ -19,8 +19,8 @@ export default function DashboardVerificationPage() {
       <p className="text-ink-soft mt-1">Request and track professional verification for your devices.</p>
 
       <Card className="mt-7 flex flex-col sm:flex-row sm:items-center gap-5">
-        <div className="h-16 w-16 rounded-[--pb-radius-sm] bg-bg border border-border flex items-center justify-center shrink-0">
-          <Image src={device.image} alt="" width={48} height={48} className="object-contain h-4/5 w-4/5" />
+        <div className="h-16 w-16 rounded-[--pb-radius-sm] bg-bg border border-border flex items-center justify-center shrink-0 overflow-hidden">
+          <Image src={device.image} alt="" width={48} height={48} className="object-contain h-full w-full" />
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">

@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
-import { AdminDataTable } from "@/components/dashboard/AdminDataTable";
+import { AdminVerificationManager } from "@/components/dashboard/AdminVerificationManager";
 import { getAdminData } from "../_data";
 
-export const metadata: Metadata = { title: "Admin Verification Requests" };
+export const metadata: Metadata = {
+  title: "Admin Verification Requests | PhoneBay",
+  description: "Manage phone inspection tests, calibrate scores, and issue verified device certificates.",
+};
 
 export default async function AdminVerificationRequestsPage() {
   const { verificationQueue } = await getAdminData();
-  return <AdminDataTable title="Verification Requests" description="Live device certification and review queue." rows={verificationQueue} columns={[
-    { label: "Device", value: (request) => `${request.brand} ${request.model}` },
-    { label: "Seller", value: (request) => request.seller_name },
-    { label: "Status", value: (request) => request.status },
-    { label: "Score", value: (request) => request.score ?? "Awaiting" },
-  ]} />;
+
+  return (
+    <div className="space-y-6">
+      <AdminVerificationManager initialQueue={verificationQueue} />
+    </div>
+  );
 }
