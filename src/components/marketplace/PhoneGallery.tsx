@@ -8,13 +8,13 @@ export function PhoneGallery({ images, alt }: { images: string[]; alt: string })
   const [active, setActive] = React.useState(0);
   return (
     <div>
-      <div className="aspect-square bg-bg rounded-[var(--pb-radius-lg)] border border-border flex items-center justify-center overflow-hidden">
+      <div className="aspect-square bg-bg rounded-(--pb-radius-lg) border border-border flex items-center justify-center overflow-hidden">
         <Image
           src={images[active]}
           alt={alt}
           width={420}
           height={420}
-          className="object-contain h-4/5 w-4/5"
+          className="object-cover h-full w-full"
           priority
         />
       </div>

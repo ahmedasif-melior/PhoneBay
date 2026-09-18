@@ -41,15 +41,15 @@ export function PhoneCard({ phone }: { phone: ListingRecord | Phone }) {
   };
 
   return (
-    <div className="group relative bg-surface border border-border rounded-[var(--pb-radius-md)] overflow-hidden transition-all duration-200 hover:border-border-strong hover:shadow-[var(--pb-shadow-md)] hover:-translate-y-0.5">
+    <div className="group relative bg-surface border border-border rounded-(--pb-radius-md) overflow-hidden transition-all duration-200 hover:border-border-strong hover:shadow-[var(--pb-shadow-md)] hover:-translate-y-0.5">
       <Link href={`/marketplace/${phone.id}`} className="block">
-        <div className="relative aspect-[4/3] bg-bg flex items-center justify-center">
+        <div className="relative aspect-4/3 bg-bg flex items-center justify-center">
           <Image
             src={image}
             alt={`${phone.brand} ${phone.model}`}
             width={220}
             height={220}
-            className="object-contain h-4/5 w-4/5"
+            className="object-cover h-full w-full"
           />
         </div>
       </Link>
